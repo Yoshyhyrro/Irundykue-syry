@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [ feature/init ]
+  pull_request:
+    branches: [ feature/init ]
+  workflow_dispatch:
+
+jobs:
+  verify-and-build:
+    name: Verify (Idris 2) and Cross-Compile (Zig Baremetal)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-arm \
+            chezscheme \
+            clang
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.13.0
+
+      - name: Setup Idris 2 Cache
+        id: cache-idris2
+        uses: actions/cache@v4
+        with:
+          path: ~/.idris2
+          key: idris2-v0.7.0-x86_64-linux
+
+      - name: Install Idris 2
+        if: steps.cache-idris2.outputs.cache-hit != 'true'
+        run: |
+          IDRIS2_VERSION="0.7.0"
+          curl -sSL "https://github.com/idris-lang/Idris2/releases/download/v${IDRIS2_VERSION}/idris2-${IDRIS2_VERSION}-x86_64-linux.tar.gz" -o idris2.tar.gz
+          tar -xzf idris2.tar.gz
+          mkdir -p ~/.idris2
+          mv idris2-${IDRIS2_VERSION}/* ~/.idris2/
+          rm -rf idris2.tar.gz idris2-${IDRIS2_VERSION}
+
+      - name: Configure Idris 2 Environment
+        run: |
+          echo "$HOME/.idris2/bin" >> $GITHUB_PATH
+          echo "LD_LIBRARY_PATH=$HOME/.idris2/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+
+      - name: Check Idris 2 Version
+        run: |
+          idris2 --version
+
+      - name: Typecheck and Build Idris 2 Package
+        run: |
+          idris2 --build irundykue.ipkg
+
+      - name: Prepare Generated Directories
+        run: |
+          mkdir -p generated
+
+      - name: Build Bare-Metal AArch64 Kernel with Zig
+        run: |
+          zig build
+
+      - name: Inspect Kernel Artifacts
+        run: |
+          ls -la zig-out/bin/
+          file zig-out/bin/irundykue-syry.elf
+
+      - name: Run QEMU Emulation Smoke Test
+        run: |
+          timeout 5s qemu-system-aarch64 \
+            -M virt,virtualization=on \
+            -cpu max \
+            -smp 4 \
+            -m 512M \
+            -nographic \
+            -kernel zig-out/bin/irundykue-syry.elf || [ $? -eq 124 ]
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: irundykue-baremetal-binaries
+          path: |
+            zig-out/bin/irundykue-syry.elf
+            zig-out/bin/irundykue-syry.bin
+          if-no-files-found: error
