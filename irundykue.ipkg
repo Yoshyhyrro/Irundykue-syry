@@ -1,0 +1,17 @@
+package irundykue
+
+authors    = "Irundykue-syry Team"
+version    = 0.1.0
+sourcedir  = "src"
+main       = Main
+executable = irundykue-gen
+
+modules = Main
+        , Irundykue.AST
+        , Irundykue.Codegen.AArch64
+        , Irundykue.Types.Singularity
+
+depends = base
+        , contrib
+
+opts = "--cg refc"

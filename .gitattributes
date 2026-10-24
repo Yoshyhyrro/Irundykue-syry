@@ -1,0 +1,3 @@
+* text=auto eol=lf
+*.S linguist-language=Assembly
+*.ld linguist-language=Linker-Script
