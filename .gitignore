@@ -1,0 +1,25 @@
+# Idris 2 build products
+/build/
+*.ttc
+*.ttm
+
+# Zig build products
+/zig-out/
+/.zig-cache/
+/zig-cache/
+
+# Assembly emitted by irundykue-gen
+/generated/*
+!/generated/.gitkeep
+
+# Local artifacts
+*.elf
+*.bin
+*.o
+*.log
+
+# Editors and operating systems
+.DS_Store
+.vscode/
+.idea/
+*.swp
