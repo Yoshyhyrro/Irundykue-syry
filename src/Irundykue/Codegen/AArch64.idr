@@ -1,5 +1,7 @@
 module Irundykue.Codegen.AArch64
 
+import Data.String
+
 -- Placeholder dictionary emitter. It defines `forth_cold_boot`, the symbol
 -- that boot.S jumps to, so that the kernel links and boots. The banner and
 -- the current exception level are written to the PL011 UART of the QEMU
