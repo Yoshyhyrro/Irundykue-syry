@@ -373,6 +373,8 @@ CODEGEN_PATH="${TARGET_DIR}/${CODEGEN_REL}"
 CODEGEN_SRC="$(stage_content codegen.idr <<'__EOF__'
 module Irundykue.Codegen.AArch64
 
+import Data.String
+
 -- Placeholder dictionary emitter. It defines `forth_cold_boot`, the symbol
 -- that boot.S jumps to, so that the kernel links and boots. The banner and
 -- the current exception level are written to the PL011 UART of the QEMU
@@ -409,8 +411,7 @@ __EOF__
 if [[ ! -e "${CODEGEN_PATH}" ]]; then
   install_from_file "${CODEGEN_REL}" "${CODEGEN_SRC}"
 elif grep -q 'dictionaryAsm' "${CODEGEN_PATH}"; then
-  log "ok" "${CODEGEN_REL} (dictionaryAsm already defined)"
-  UNCHANGED=$(( UNCHANGED + 1 ))
+  : # Written by an earlier run of fix.bash; the import is checked below.
 elif grep -q 'Placeholder' "${CODEGEN_PATH}" && (( ! FORCE )); then
   # Still the stub written by init.bash.
   FORCE_SAVED="${FORCE}"
@@ -419,6 +420,21 @@ elif grep -q 'Placeholder' "${CODEGEN_PATH}" && (( ! FORCE )); then
   FORCE="${FORCE_SAVED}"
 else
   install_from_file "${CODEGEN_REL}" "${CODEGEN_SRC}"
+fi
+
+# `unlines` lives in Data.String, not in the Prelude. An earlier version of
+# this script wrote the module without the import, so repair that as well.
+if [[ -e "${CODEGEN_PATH}" ]]; then
+  capture OLD_CODEGEN_HEAD <<'__EOF__'
+module Irundykue.Codegen.AArch64
+__EOF__
+  capture NEW_CODEGEN_HEAD <<'__EOF__'
+module Irundykue.Codegen.AArch64
+
+import Data.String
+__EOF__
+  patch_text "${CODEGEN_REL}" "import Data.String (provides unlines)" \
+    "${OLD_CODEGEN_HEAD}" "${NEW_CODEGEN_HEAD}"
 fi
 
 # ---------------------------------------------------------------------------

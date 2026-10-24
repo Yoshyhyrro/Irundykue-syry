@@ -25,17 +25,24 @@ jobs:
             clang \
             libgmp-dev
 
+      # build.zig targets the Zig 0.15+ build API and was verified with 0.17.0.
+      # Keep this pin in sync with the version used locally.
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.0
+
       - name: Setup Idris 2 Cache
         id: cache-idris2
         uses: actions/cache@v4
         with:
           path: ~/.idris2
-          key: idris2-v0.7.0-chezscheme
+          key: idris2-v0.8.0-chezscheme
 
       - name: Bootstrap and Install Idris 2
         if: steps.cache-idris2.outputs.cache-hit != 'true'
         run: |
-          git clone --depth 1 --branch v0.7.0 https://github.com/idris-lang/Idris2.git /tmp/Idris2
+          git clone --depth 1 --branch v0.8.0 https://github.com/idris-lang/Idris2.git /tmp/Idris2
           cd /tmp/Idris2
           SCHEME_BIN=$(which chezscheme || which chez || which scheme)
           make bootstrap SCHEME="$SCHEME_BIN"
@@ -47,9 +54,10 @@ jobs:
           echo "$HOME/.idris2/bin" >> $GITHUB_PATH
           echo "LD_LIBRARY_PATH=$HOME/.idris2/lib:$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
-      - name: Check Idris 2 Version
+      - name: Check Toolchain Versions
         run: |
           idris2 --version
+          zig version
 
       - name: Typecheck and Build Idris 2 Package
         run: |
@@ -68,15 +76,24 @@ jobs:
           ls -la zig-out/bin/
           file zig-out/bin/irundykue-syry.elf
 
+      # Without virtualization=on the QEMU virt machine enters the kernel at
+      # EL1, which is what boot.S expects. The kernel parks in a WFE loop, so
+      # a timeout (exit status 124) is the expected outcome; the banner proves
+      # that the boot path ran and that it ran at EL1.
       - name: Run QEMU Emulation Smoke Test
+        shell: bash
         run: |
+          status=0
           timeout 5s qemu-system-aarch64 \
-            -M virt,virtualization=on \
+            -M virt \
             -cpu max \
             -smp 4 \
             -m 512M \
             -nographic \
-            -kernel zig-out/bin/irundykue-syry.elf || [ $? -eq 124 ]
+            -kernel zig-out/bin/irundykue-syry.elf > qemu.log 2>&1 || status=$?
+          cat qemu.log
+          [ "$status" -eq 124 ]
+          grep -q "cold boot at EL1" qemu.log
 
       - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
