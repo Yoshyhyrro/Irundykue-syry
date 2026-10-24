@@ -7,8 +7,7 @@ pub fn build(b: *std.Build) void {
         .abi = .none,
         .cpu_features_add = std.Target.aarch64.featureSet(&[_]std.Target.aarch64.Feature{
             .sve2,
-            .paca,
-            .pacg,
+            .pauth,
             .tme,
         }),
     });
@@ -30,16 +29,19 @@ pub fn build(b: *std.Build) void {
     run_gen.step.dependOn(&run_idris_pkg.step);
 
     // Step 2: Build the Bare-Metal AArch64 ELF kernel
-    const elf = b.addExecutable(.{
-        .name = "irundykue-syry.elf",
+    const kernel_module = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .strip = false,
     });
+    kernel_module.addAssemblyFile(b.path("src/arch/aarch64/boot.S"));
+    kernel_module.addAssemblyFile(b.path("src/arch/aarch64/vectors.S"));
+    kernel_module.addAssemblyFile(b.path("generated/forth_dict.S"));
 
-    elf.addAssemblyFile(b.path("src/arch/aarch64/boot.S"));
-    elf.addAssemblyFile(b.path("src/arch/aarch64/vectors.S"));
-    elf.addAssemblyFile(b.path("generated/forth_dict.S"));
+    const elf = b.addExecutable(.{
+        .name = "irundykue-syry.elf",
+        .root_module = kernel_module,
+    });
     elf.setLinkerScript(b.path("src/arch/aarch64/linker.ld"));
 
     elf.step.dependOn(&run_gen.step);
@@ -52,10 +54,11 @@ pub fn build(b: *std.Build) void {
     const install_bin = b.addInstallBinFile(bin.getOutput(), "irundykue-syry.bin");
     b.getInstallStep().dependOn(&install_bin.step);
 
-    // Step 4: Run target in QEMU virt machine
+    // Step 4: Run target in QEMU virt machine. Without virtualization=on the
+    // kernel is entered at EL1, which is what boot.S expects.
     const qemu_cmd = b.addSystemCommand(&[_][]const u8{
         "qemu-system-aarch64",
-        "-M", "virt,virtualization=on",
+        "-M", "virt",
         "-cpu", "max",
         "-smp", "4",
         "-m", "512M",

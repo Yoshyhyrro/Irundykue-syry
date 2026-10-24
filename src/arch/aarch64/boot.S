@@ -35,6 +35,10 @@ _start:
     ldr x0, =__forth_rstack_top
     mov sp, x0
 
+    // Clear the CO-EXECUTE recovery token. General-purpose registers have
+    // UNKNOWN values after reset, and sync_handler tests x28 against zero.
+    mov x28, #0
+
     // Jump to the Forth inner interpreter entry point
     ldr x20, =forth_cold_boot
     br  x20

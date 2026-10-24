@@ -23,3 +23,6 @@
 .vscode/
 .idea/
 *.swp
+
+# Backups written by fix.bash
+/.fix-backup/

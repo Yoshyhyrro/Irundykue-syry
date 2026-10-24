@@ -1,6 +1,10 @@
 module Main
 
 import Data.String
+import System
+import System.File
+
+import Irundykue.Codegen.AArch64
 
 -- =====================================================================
 -- AST for the Armv8/v9 Singularity Forth Dialect
@@ -27,7 +31,7 @@ data Forth : (sd : Nat) -> (od : Nat) -> (tx : Bool) ->
   Div  : Forth (S (S sd)) od tx (S sd) od tx
 
   -- =====================================================================
-  -- The Koszul Complex (Singularity Resolution)
+  -- Coarse Map and Second Operator (Singularity Recovery)
   --
   -- CO-EXECUTE takes two execution tokens.
   -- xt1 : The primary operator (L_u) which may cause a singularity.
@@ -36,6 +40,12 @@ data Forth : (sd : Nat) -> (od : Nat) -> (tx : Bool) ->
   -- Notice the type of xt2: it starts with (S sd) because the singularity
   -- residue (Ext^1) is mathematically pushed onto the stack.
   -- Both paths must converge to the exact same stack depth (sd').
+  --
+  -- Note: this type enforces depth convergence only. The upstream pair
+  -- (L_u, L_v) anticommutes (fg + gf = 0 in the Clifford case, AC10),
+  -- whereas a Koszul complex (AC8) concerns commuting operators. The
+  -- invariance and completeness properties of the second operator are not
+  -- yet expressed at the type level. See docs/REFERENCES.md.
   -- =====================================================================
   CoExecute : (xt1 : Forth sd od tx sd' od tx) ->
               (xt2 : Forth (S sd) od tx sd' od tx) ->
@@ -47,7 +57,8 @@ data Forth : (sd : Nat) -> (od : Nat) -> (tx : Bool) ->
   -- Clifford Contraction (4-dimensional quantization via SVE2)
   --
   -- Moving data to the orthogonal subspace requires exactly 4 dimensions,
-  -- reflecting the mathematical proof of kernel quantization.
+  -- matching dim Cl_N(2) = 4 (basis 1, X, Y, XY). No quantization theorem
+  -- is claimed upstream; see docs/REFERENCES.md.
   -- =====================================================================
   ToOrtho    : Forth (S (S (S (S sd)))) od tx sd (S (S (S (S od)))) tx
   FromOrtho  : Forth sd (S (S (S (S od)))) tx (S (S (S (S sd)))) od tx
@@ -57,6 +68,8 @@ data Forth : (sd : Nat) -> (od : Nat) -> (tx : Bool) ->
   -- Heisenberg Transaction (TME)
   --
   -- Prevents nested transactions and enforces closure via the Bool flag.
+  -- The flag is an implementation discipline; upstream makes no statement
+  -- about transactions.
   -- =====================================================================
   TxBegin : Forth sd od False sd od True
   TxEnd   : Forth sd od True sd od False
@@ -107,7 +120,20 @@ prog =
   TxEnd >>>
   FromOrtho
 
+-- Writes the placeholder dictionary assembly to PATH.
+emitAsm : String -> IO ()
+emitAsm path = do
+  Right () <- writeFile path dictionaryAsm
+    | Left err => do
+        putStrLn ("error: cannot write " ++ path ++ ": " ++ show err)
+        exitFailure
+  putStrLn ("wrote " ++ path)
+
 main : IO ()
 main = do
-  putStrLn "\\ Generated Forth 2012 (Armv8/v9 Singularity Dialect) code"
-  putStrLn (compile prog)
+  args <- getArgs
+  case args of
+    [_, "--emit-asm", path] => emitAsm path
+    _ => do
+      putStrLn "\\ Generated Forth 2012 (Armv8/v9 Singularity Dialect) code"
+      putStrLn (compile prog)
