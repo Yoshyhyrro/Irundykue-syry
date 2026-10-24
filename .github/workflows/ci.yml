@@ -22,29 +22,25 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             qemu-system-arm \
             chezscheme \
-            clang
-
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v2
-        with:
-          version: 0.13.0
+            clang \
+            libgmp-dev
 
       - name: Setup Idris 2 Cache
         id: cache-idris2
         uses: actions/cache@v4
         with:
           path: ~/.idris2
-          key: idris2-v0.7.0-x86_64-linux
+          key: idris2-v0.7.0-chezscheme
 
-      - name: Install Idris 2
+      - name: Bootstrap and Install Idris 2
         if: steps.cache-idris2.outputs.cache-hit != 'true'
         run: |
-          IDRIS2_VERSION="0.7.0"
-          curl -sSL "https://github.com/idris-lang/Idris2/releases/download/v${IDRIS2_VERSION}/idris2-${IDRIS2_VERSION}-x86_64-linux.tar.gz" -o idris2.tar.gz
-          tar -xzf idris2.tar.gz
-          mkdir -p ~/.idris2
-          mv idris2-${IDRIS2_VERSION}/* ~/.idris2/
-          rm -rf idris2.tar.gz idris2-${IDRIS2_VERSION}
+          git clone --depth 1 --branch v0.7.0 https://github.com/idris-lang/Idris2.git /tmp/Idris2
+          cd /tmp/Idris2
+          SCHEME_BIN=$(which chezscheme || which chez || which scheme)
+          make bootstrap SCHEME="$SCHEME_BIN"
+          make install
+          rm -rf /tmp/Idris2
 
       - name: Configure Idris 2 Environment
         run: |
