@@ -11,8 +11,10 @@
 #        - replaces the placeholder with a minimal dictionary emitter that
 #          defines `forth_cold_boot`, so that the kernel links and boots
 #   3. build.zig
-#        - ports the build graph to the current Zig API when `zig` is 0.15+
-#          (candidates are verified with `zig build --help` before install)
+#        - ports the build graph to the current Zig API when `zig` is 0.14+;
+#          CPU feature names (pauth/paca/pacg/tme) and the ObjCopy format are
+#          resolved at compile time, so one file works on Zig 0.14 to 0.17
+#          (the result is checked with `zig build --help` before install)
 #        - boots the QEMU virt machine at EL1 (drops `virtualization=on`)
 #   4. src/arch/aarch64/boot.S
 #        - clears x28 (the CO-EXECUTE recovery token) before the first word
@@ -61,7 +63,7 @@ Options:
   -n, --dry-run         Report what would change without modifying anything
   -f, --force           Overwrite files even if they were modified locally
       --verify          After fixing, run "idris2 --build" and "zig build"
-      --zig-api MODE    auto (default), current (Zig 0.15+) or legacy
+      --zig-api MODE    auto (default), current (Zig 0.14+) or legacy
   -h, --help            Show this help and exit
 __USAGE__
 }
@@ -443,17 +445,42 @@ fi
 
 printf '\nbuild.zig\n'
 
-BUILD_TEMPLATE="$(stage_content build.zig.tpl <<'__EOF__'
+BUILD_ZIG_SRC="$(stage_content build.zig <<'__EOF__'
 const std = @import("std");
 
+// CPU features requested for the kernel. Names are resolved at compile time
+// so that one build.zig works across Zig releases: pauth replaced
+// paca / pacg, and tme is absent from newer toolchains. Features that
+// the running Zig does not know are skipped.
+const wanted_cpu_features = [_][]const u8{ "sve2", "pauth", "paca", "pacg", "tme" };
+
 pub fn build(b: *std.Build) void {
+    const cpu_features = comptime blk: {
+        const Feature = std.Target.aarch64.Feature;
+        var found: [wanted_cpu_features.len]Feature = undefined;
+        var count: usize = 0;
+        for (wanted_cpu_features) |name| {
+            if (@hasField(Feature, name)) {
+                found[count] = @field(Feature, name);
+                count += 1;
+            }
+        }
+        break :blk found[0..count].*;
+    };
+
+    // ObjCopy renamed its format enum (RawFormat to Format) and the raw
+    // binary member (bin to binary) between Zig releases.
+    const ObjCopyFormat = if (@hasDecl(std.Build.Step.ObjCopy, "Format"))
+        std.Build.Step.ObjCopy.Format
+    else
+        std.Build.Step.ObjCopy.RawFormat;
+    const objcopy_format = @field(ObjCopyFormat, if (@hasField(ObjCopyFormat, "binary")) "binary" else "bin");
+
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .aarch64,
         .os_tag = .freestanding,
         .abi = .none,
-        .cpu_features_add = std.Target.aarch64.featureSet(&[_]std.Target.aarch64.Feature{
-@@FEATURES@@
-        }),
+        .cpu_features_add = std.Target.aarch64.featureSet(&cpu_features),
     });
 
     const optimize = b.standardOptimizeOption(.{});
@@ -493,7 +520,7 @@ pub fn build(b: *std.Build) void {
 
     // Step 3: Emit raw flat binary for QEMU / Bare-metal flash
     const bin = b.addObjCopy(elf.getEmittedBin(), .{
-        .format = .@@OBJCOPY_FORMAT@@,
+        .format = objcopy_format,
     });
     const install_bin = b.addInstallBinFile(bin.getOutput(), "irundykue-syry.bin");
     b.getInstallStep().dependOn(&install_bin.step);
@@ -517,23 +544,6 @@ pub fn build(b: *std.Build) void {
 __EOF__
 )"
 
-# render_build_zig OUTPUT "feature feature ..." FORMAT
-render_build_zig() {
-  local out="$1" features="$2" format="$3"
-  local lines="" feature template
-  for feature in ${features}; do
-    if [[ -n "${lines}" ]]; then
-      lines+=$'\n'
-    fi
-    lines+="            .${feature},"
-  done
-  template="$(cat "${BUILD_TEMPLATE}"; printf x)"
-  template="${template%x}"
-  template="${template/"@@FEATURES@@"/"${lines}"}"
-  template="${template/"@@OBJCOPY_FORMAT@@"/"${format}"}"
-  printf '%s' "${template}" >"${out}"
-}
-
 # zig_configures FILE: succeeds when `zig build --help` accepts FILE.
 zig_configures() {
   local dir="${SCRATCH}/zigcheck"
@@ -552,9 +562,22 @@ zig_minor_version() {
   printf '%s.%s' "${version%%.*}" "${rest}"
 }
 
+# build.zig files written by earlier versions of init.bash and fix.bash. They
+# may be replaced without --force because they were never edited by hand.
+KNOWN_BUILD_ZIG_HASHES=(
+  "${HASH_BUILD_ZIG_V1}"
+  "ae4d1e4b5a0da15a7285565b836dec9b24fa62aa34e936bffd2eb896efa09eed"
+  "e33f1354302a66ffe7c657ad25dc6f447c1190706f06a9870d6406f41cf8bd8c"
+  "bcccb068efbfd76c41f2ed02935dea4a7de8b241974d207664a818651371d78a"
+  "b6b2de30a7ce7ce2e276965a0ec30a4309102d232fec0ad84e149c7c76cbf326"
+  "158073de8389d19f3118d57e9bdae773885ed57f892162d9baeaae53ae564c48"
+  "f105d0377efa8f9e6fe73ad9031de7425c8baf3a8bf47d91560da74a11390dec"
+  "2e6793f303d17e22c9420f02f5b4c411f95b7616eb835a677e82dbbc5b975434"
+  "7fa37f190460da53f2370a690f863e583658064b2fef8a1ec15bf6016dce0909"
+)
+
 fix_build_zig() {
-  local api="${ZIG_API}" version major minor candidate found=0
-  local features format
+  local api="${ZIG_API}" version major minor
 
   if [[ ! -e "${TARGET_DIR}/build.zig" ]]; then
     warn "build.zig not found; skipping"
@@ -570,7 +593,7 @@ fix_build_zig() {
       version="$(zig_minor_version)" || version="0.0"
       major="${version%%.*}"
       minor="${version#*.}"
-      if (( major > 0 || minor >= 15 )); then
+      if (( major > 0 || minor >= 14 )); then
         api="current"
       else
         api="legacy"
@@ -587,29 +610,15 @@ fix_build_zig() {
 
   command -v zig >/dev/null 2>&1 || die "--zig-api current requires zig to verify build.zig"
 
-  candidate="${SCRATCH}/build.zig.candidate"
-  for features in "sve2 pauth tme" "sve2 paca pacg tme" "sve2 pauth" "sve2 paca pacg"; do
-    for format in binary bin; do
-      render_build_zig "${candidate}" "${features}" "${format}"
-      if zig_configures "${candidate}"; then
-        found=1
-        break 2
-      fi
-    done
-  done
-
-  if (( ! found )); then
-    warn "no build.zig candidate was accepted by this zig; left unchanged"
+  if ! zig_configures "${BUILD_ZIG_SRC}"; then
+    warn "this zig rejected the proposed build.zig; left unchanged"
     NEEDS_REVIEW=$(( NEEDS_REVIEW + 1 ))
     return 0
   fi
 
-  log "info" "accepted CPU features: ${features}; objcopy format: ${format}"
-  case " ${features} " in
-    *" tme "*) ;;
-    *) log "info" "this zig has no 'tme' CPU feature; TME instructions cannot be assembled" ;;
-  esac
-  install_from_file "build.zig" "${candidate}" "${HASH_BUILD_ZIG_V1}"
+  # CPU feature names and the ObjCopy format are resolved at compile time, so
+  # the same file works on Zig 0.14 and newer.
+  install_from_file "build.zig" "${BUILD_ZIG_SRC}" "${KNOWN_BUILD_ZIG_HASHES[@]}"
 }
 fix_build_zig
 

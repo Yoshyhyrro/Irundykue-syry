@@ -1,15 +1,38 @@
 const std = @import("std");
 
+// CPU features requested for the kernel. Names are resolved at compile time
+// so that one build.zig works across Zig releases: pauth replaced
+// paca / pacg, and tme is absent from newer toolchains. Features that
+// the running Zig does not know are skipped.
+const wanted_cpu_features = [_][]const u8{ "sve2", "pauth", "paca", "pacg", "tme" };
+
 pub fn build(b: *std.Build) void {
+    const cpu_features = comptime blk: {
+        const Feature = std.Target.aarch64.Feature;
+        var found: [wanted_cpu_features.len]Feature = undefined;
+        var count: usize = 0;
+        for (wanted_cpu_features) |name| {
+            if (@hasField(Feature, name)) {
+                found[count] = @field(Feature, name);
+                count += 1;
+            }
+        }
+        break :blk found[0..count].*;
+    };
+
+    // ObjCopy renamed its format enum (RawFormat to Format) and the raw
+    // binary member (bin to binary) between Zig releases.
+    const ObjCopyFormat = if (@hasDecl(std.Build.Step.ObjCopy, "Format"))
+        std.Build.Step.ObjCopy.Format
+    else
+        std.Build.Step.ObjCopy.RawFormat;
+    const objcopy_format = @field(ObjCopyFormat, if (@hasField(ObjCopyFormat, "binary")) "binary" else "bin");
+
     const target = b.resolveTargetQuery(.{
         .cpu_arch = .aarch64,
         .os_tag = .freestanding,
         .abi = .none,
-        .cpu_features_add = std.Target.aarch64.featureSet(&[_]std.Target.aarch64.Feature{
-            .sve2,
-            .pauth,
-            .tme,
-        }),
+        .cpu_features_add = std.Target.aarch64.featureSet(&cpu_features),
     });
 
     const optimize = b.standardOptimizeOption(.{});
@@ -49,7 +72,7 @@ pub fn build(b: *std.Build) void {
 
     // Step 3: Emit raw flat binary for QEMU / Bare-metal flash
     const bin = b.addObjCopy(elf.getEmittedBin(), .{
-        .format = .bin,
+        .format = objcopy_format,
     });
     const install_bin = b.addInstallBinFile(bin.getOutput(), "irundykue-syry.bin");
     b.getInstallStep().dependOn(&install_bin.step);
