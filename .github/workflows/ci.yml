@@ -80,6 +80,10 @@ jobs:
       # EL1, which is what boot.S expects. The kernel parks in a WFE loop, so
       # a timeout (exit status 124) is the expected outcome; the banner proves
       # that the boot path ran and that it ran at EL1.
+      #
+      # "-nic none" drops the default virtio-net device. Its option ROM
+      # (efi-virtio.rom) comes from ipxe-qemu, which "--no-install-recommends"
+      # does not install, and a bare-metal smoke test needs no network.
       - name: Run QEMU Emulation Smoke Test
         shell: bash
         run: |
@@ -90,6 +94,7 @@ jobs:
             -smp 4 \
             -m 512M \
             -nographic \
+            -nic none \
             -kernel zig-out/bin/irundykue-syry.elf > qemu.log 2>&1 || status=$?
           cat qemu.log
           [ "$status" -eq 124 ]
