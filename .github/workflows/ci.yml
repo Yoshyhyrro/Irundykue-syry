@@ -34,7 +34,7 @@ jobs:
 
       - name: Setup Idris 2 Cache
         id: cache-idris2
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.idris2
           key: idris2-v0.8.0-chezscheme
