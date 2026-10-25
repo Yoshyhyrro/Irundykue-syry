@@ -25,3 +25,5 @@
 
 # Backups written by fix.bash
 /.fix-backup/
+fix.bash
+init.bash

@@ -53,6 +53,37 @@ QEMU.
 `zig build` runs `idris2 --build` itself, so the first command is only needed
 when you want to type-check without building the kernel.
 
+### Inserting a Forth file
+
+The kernel has no file system. `forth_file_Insert.bash` hands source files to it
+through guest memory: it concatenates the files, prefixes a 16-byte header and
+lets QEMU's generic loader place the image at `0x41000000` before the first
+instruction runs.
+
+```sh
+bash forth_file_Insert.bash program.4th              # insert one file and run
+bash forth_file_Insert.bash a.4th b.tatatina         # files are concatenated in order
+cat program.4th | bash forth_file_Insert.bash -      # read the file from standard input
+bash forth_file_Insert.bash program.4th --expect 'cold boot at EL1' --log run.log
+bash forth_file_Insert.bash --emit-image input.img program.4th   # write the image only
+```
+
+The script looks for `irundykue-syry.elf` next to itself, then in `zig-out/bin/`,
+so it works unchanged from a release archive that contains both files. Accepted
+extensions are `.4th`, `.tatatina` and `.irundykue`; the payload may be at most
+1 MiB. The exit status is QEMU's (or 124 on timeout, 3 when an `--expect`
+pattern is missing). Run it with `--help` for every option.
+
+| Offset | Size | Content                                  |
+|--------|------|------------------------------------------|
+| 0      | 8    | Magic `SYRYIN01`                         |
+| 8      | 8    | Payload length, little endian            |
+| 16     | n    | Payload (Forth source text)              |
+
+At the moment the kernel only echoes the inserted text to the UART and powers
+the machine off through PSCI, so QEMU exits with status 0. The outer interpreter
+that will consume the same buffer is not written yet.
+
 ### Using the generator directly
 
 ```sh
@@ -147,6 +178,7 @@ end at depth 1, the depth the primary branch leaves.
 | Data stack                   | `SP_EL0`, 32 KiB, top at `__forth_dstack_top`                                |
 | Return / exception stack     | `SP_EL1`, 32 KiB, top at `__forth_rstack_top`                                |
 | Memory map                   | 128 MiB of RAM at `0x40000000` (QEMU `virt`)                                 |
+| Inserted file                | Image at `0x41000000`, loaded by QEMU before reset; at most 1 MiB of payload |
 | Vector table                 | `el1_vector_table`, 16 entries of 128 bytes, aligned to 2 KiB                |
 | Recovery token               | `x28` holds the address of `xt2`, or 0 when no `CO-EXECUTE` is active        |
 | Recovery path                | A synchronous exception at EL1 with `SP_ELx` (vector offset `0x200`) loads `ELR_EL1` from `x28`, passes `ESR_EL1` in `x0`, clears `x28` and executes `ERET` |
@@ -157,10 +189,75 @@ end at depth 1, the depth the primary branch leaves.
 the vector base, sets up both stacks and clears `x28` before the first word
 runs.
 
+## Project manifest
+
+`project.syryaml` is a minimal, Alire-inspired manifest. It names the project,
+its main executable, its source directories, its hardware target and its legacy
+dependencies:
+
+```yaml
+name: irundykue_app
+version: 0.1.0
+licenses: BSD-3-Clause
+executable: src/main.tatatina
+source-dirs:
+  - src
+  - lib
+target:
+  arch: aarch64-none-elf
+  features: [sve2, pac, tme]
+dependencies:
+  - vendor/compat.4th
+```
+
+The file is generated, not written by hand. `configuration_file_Generate.idr`
+validates the configuration and renders the manifest; the driver
+`configuration_file_Generate.bash` builds that generator, runs it and manages
+the file on disk. The two files must stay in the same directory.
+
+```sh
+bash configuration_file_Generate.bash                 # write project.syryaml if it is missing
+bash configuration_file_Generate.bash --check         # CI: manifest matches, referenced files exist
+bash configuration_file_Generate.bash --scaffold      # create referenced files that are missing
+bash configuration_file_Generate.bash --stdout -- --name my_app --version 0.2.0
+bash configuration_file_Generate.bash -o dist/bundle/project.syryaml   # write a copy elsewhere
+```
+
+An existing manifest that differs from the generated one is never overwritten
+unless `--force` is given, in which case the old file is kept as
+`project.syryaml.bak`. Options after `--` are passed to the generator; run
+`bash configuration_file_Generate.bash -- --help` for the list. The generator is
+built into `.cache/` (see `--cache-dir`), which should be listed in
+`.gitignore`; the driver warns when it is not.
+
+### File extensions
+
+| Extension     | Kind                           | Checked by the generator                |
+|---------------|--------------------------------|-----------------------------------------|
+| `.syryaml`    | Project manifest               | Output path of the driver               |
+| `.tatatina`   | Main executable stream         | `executable` must end in this extension |
+| `.irundykue`  | Definitions and specifications | Searched under `source-dirs`            |
+| `.4th`        | Legacy Forth asset             | Every `dependencies` entry              |
+
+The extension of an executable or dependency is part of its type in the
+generator, so a manifest that names `src/main.4th` as its executable cannot be
+produced. Paths must be relative, use only `A-Z a-z 0-9 _ . / -`, and contain no
+empty, `.` or `..` segments. Every problem found is reported at once.
+
+The manifest lists `tme` as a CPU feature, and the generator prints a note about
+it: Zig 0.17.0 has no `tme` feature and QEMU 8.2.2 does not emulate FEAT_TME (see
+[Known limitations](#known-limitations)). `build.zig` does not read the manifest
+yet; its CPU features are still set in `build.zig` itself.
+
 ## Repository layout
 
 ```
 .github/workflows/ci.yml            Continuous integration
+LICENSE                             BSD-3-Clause license text
+project.syryaml                     Generated project manifest
+configuration_file_Generate.idr     Manifest generator (Idris 2)
+configuration_file_Generate.bash    Driver: builds and runs the generator, manages the file
+forth_file_Insert.bash              Runs the kernel in QEMU with Forth files inserted
 irundykue.ipkg                      Idris 2 package description
 build.zig                           Zig build graph
 src/Main.idr                        Generator entry point and the prototype AST
@@ -171,6 +268,7 @@ src/arch/aarch64/boot.S             Reset entry: CPACR_EL1, VBAR_EL1, stacks
 src/arch/aarch64/vectors.S          EL1 exception vector table and recovery handler
 src/arch/aarch64/linker.ld          Memory map for the QEMU virt machine
 generated/                          Output of irundykue-gen (git-ignored)
+.cache/                             Build cache of the manifest generator (git-ignored)
 docs/REFERENCES.md                  Design background and upstream correspondence
 test/                               Tests (empty so far)
 ```
@@ -205,11 +303,14 @@ Working:
 - the EL1 boot path, vector table and recovery handler, assembled and linked
   by Zig;
 - booting under QEMU and printing the banner and the current exception level
-  over the PL011 UART.
+  over the PL011 UART;
+- inserting Forth source files into guest memory and echoing them back
+  (`forth_file_Insert.bash`).
 
 Not implemented yet:
 
-- the Forth inner interpreter and the real dictionary;
+- the Forth inner interpreter, the outer interpreter that would read the
+  inserted source, and the real dictionary;
 - the Forth 2012 core word set and any conformance testing;
 - the split of `src/Main.idr` into `Irundykue.AST`, `Irundykue.Codegen.AArch64`
   and `Irundykue.Types.Singularity` (the prototype AST still lives in `Main`);
@@ -246,4 +347,7 @@ statements it corresponds to.
 
 ## License
 
-BSD-3-Clause license
+Irundykue-syry is released under the BSD 3-Clause License; see
+[`LICENSE`](LICENSE). Redistributions in binary form, such as the ELF and BIN
+kernel images, must reproduce the copyright notice, the list of conditions and
+the disclaimer in the documentation or other materials that accompany them.
