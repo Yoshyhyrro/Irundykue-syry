@@ -245,6 +245,10 @@ if (( ${#FILES[@]} )); then
       if (( ! ANY_EXTENSION )) && ! has_allowed_extension "${file}"; then
         die "${file}: unexpected extension; expected one of ${ALLOWED_EXTENSIONS[*]} (or use --any-extension)"
       fi
+      if bad_line="$(LC_ALL=C grep -n -m1 -E '[^[:print:][:space:]]' "${file}")"; then
+        note "warning: ${file}:${bad_line%%:*}: non-ASCII or control characters" \
+             "(harmless in comments, but a Forth tokenizer reads them as part of a word)"
+      fi
       cat "${file}" >>"${SCRATCH}/payload"
     fi
     printf '\n' >>"${SCRATCH}/payload"
