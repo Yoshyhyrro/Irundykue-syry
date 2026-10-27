@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ feature/init ]
+    branches: [ feature/configuration_file ]
   pull_request:
-    branches: [ feature/init ]
+    branches: [ feature/configuration_file ]
   workflow_dispatch:
 
 jobs:
