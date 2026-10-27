@@ -100,6 +100,26 @@ jobs:
           [ "$status" -eq 124 ]
           grep -q "cold boot at EL1" qemu.log
 
+      # The kernel does not interpret Forth yet: it echoes an inserted file back
+      # and powers the machine off. This step proves that the whole insertion
+      # path (header, QEMU loader, kernel reader, UART) delivers the bytes.
+      # Remove it once the interpreter replaces the echo.
+      - name: Insertion Round-Trip Test
+        shell: bash
+        run: |
+          printf '\\ round trip\n1 2 + .\n' > "$RUNNER_TEMP/roundtrip.tatatina"
+          bash ./irundykue run "$RUNNER_TEMP/roundtrip.tatatina" \
+            --timeout 20 --expect '1 2 \+ \.'
+
+      # Golden-output tests in test/. Tests listed in test/XFAIL are known to
+      # fail and are reported as XFAIL; a listed test that starts to pass is an
+      # error (XPASS) so that the list is kept honest.
+      - name: Run Test Suite
+        shell: bash
+        run: |
+          bash ./irundykue --version
+          bash ./irundykue test
+
       - name: Upload Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
