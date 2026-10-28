@@ -63,8 +63,9 @@ STATUS_FILES := $(addprefix $(WORK)/test/,$(addsuffix .status,$(TESTS)))
 # Shell helpers shared by the recipes
 # ---------------------------------------------------------------------------
 
-# make_image OUT FILE...: concatenate the files and prefix the 16-byte header
-# (magic, little-endian length). qemu_run [IMAGE]: run the kernel.
+# make_image OUT FILE...: concatenate the files (carriage returns removed, so
+# that CRLF sources behave like LF ones) and prefix the 16-byte header (magic,
+# little-endian length). qemu_run [IMAGE]: run the kernel.
 # run_test NAME: run one golden test and write its status file.
 define SH_LIB
 make_image() { \
@@ -75,7 +76,7 @@ make_image() { \
       *.4th|*.tatatina|*.irundykue) ;; \
       *) if [ -z "$(ANY_EXT)" ]; then echo "error: $$f: expected .4th, .tatatina or .irundykue (set ANY_EXT=1 to allow other files)" >&2; rm -f "$$payload"; return 1; fi ;; \
     esac; \
-    cat "$$f" >> "$$payload"; printf '\n' >> "$$payload"; \
+    tr -d '\r' < "$$f" >> "$$payload"; printf '\n' >> "$$payload"; \
   done; \
   len=$$(wc -c < "$$payload" | tr -d '[:space:]'); \
   if [ "$$len" -gt $(INPUT_MAX) ]; then echo "error: the payload is $$len bytes; the limit is $(INPUT_MAX)" >&2; rm -f "$$payload"; return 1; fi; \
