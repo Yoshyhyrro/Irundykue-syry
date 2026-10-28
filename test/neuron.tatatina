@@ -1,21 +1,66 @@
 \ ==============================================================================
 \ neuron.tatatina
-\ Irundykue-syry : Verified Singular Neuron Forward Pass
+\ Irundykue-syry : Singular Neuron, Forward Pass
 \ ==============================================================================
+\
+\ Status
+\   Forward pass only; no error backpropagation is used. This is a test
+\   program for the dialect, not a verified model. The Idris front end does not
+\   model >R, R>, * or 2DROP yet, and no theorem of the upstream Agda notes is
+\   applied to this file. The expected output is in test/neuron.expected, and
+\   the test is listed in test/XFAIL until the interpreter exists.
+\
+\ Open questions of this project (not established by the upstream notes)
+\   Q1. Can the second-operator lemmas serve, at the singular point A/0, in the
+\       way a derived-category treatment (D-module-like) would: a recovery
+\       value that is defined exactly where the primary path is undefined?
+\   Q2. If so, is it legitimate to let them? What must a recovery value
+\       preserve for that, and how would this be tested?
+\   Only one part touches the upstream notes: Ext^1 is a derived-functor object,
+\   and the notes realise it as the cokernel of a coboundary map. They contain
+\   nothing about D-modules, differential operators or learning rules.
+\
+\ Relation to the upstream notes (an analogy, not a derivation)
+\   Upstream (AC2, AC3, AC6): a coarse map U loses information, and a second
+\   map S recovers exactly what U loses. S is unchanged by the lost "noise"
+\   (S-ext-invariant-under-all-coboundaries) and changes only with it
+\   (S-ext-complete). This is proved for specific instances only, and no
+\   uniform S is claimed.
+\   Differences that matter here:
+\   - Upstream applies S after U. CO-EXECUTE runs the recovery path instead of
+\     the primary path, after the primary path has thrown.
+\   - The upstream pair L_u, L_v (AC10) are anticommuting left-multiplication
+\     matrices. The words below are neither matrices nor anticommuting, so the
+\     names L_u and L_v are not used in this file.
+\   - ext1 below is the THROW code -10, a label used as a number. An upstream
+\     Ext^1 class is a cokernel class, and extractor-separates shows that the
+\     upstream extractor is not constant.
+\   - The Abelian Curse of the notes is the information lost by an
+\     abelianization. A division by zero is a different failure: it has no
+\     result at all.
 
 \ ------------------------------------------------------------------------------
-\ 1. Dual-Path Operators (Strict Stack Semantics)
+\ 1. Primary Path and Recovery Path (Strict Stack Semantics)
 \ ------------------------------------------------------------------------------
 
-\ Primary Operator (L_u): Standard Path
+\ Primary path: computes x / w_u.
+\ A zero w_u is the singular point. The / word throws -10 (division by zero).
+\ The AArch64 SDIV instruction does not trap, so / must test the divisor itself.
 \ Stack: ( x w_u w_v -- y )
 : MAC-NORMAL
   DROP                  \ Discard w_v -> ( x w_u )
-  /                     \ Compute x / w_u. Triggers A/0 if w_u == 0!
+  /                     \ x / w_u; throws -10 if w_u = 0
 ;
 
-\ Secondary Operator (L_v): Orthogonal Recovery
-\ The singularity token (-10) is pushed on TOP of the stack.
+\ Recovery path: runs instead of MAC-NORMAL when MAC-NORMAL throws -10.
+\ CO-EXECUTE first restores the stacks to their state before MAC-NORMAL, then
+\ pushes the THROW code -10 on TOP of the data stack. The value is the same as
+\ tokenValue DivByZeroResidue in Irundykue.Exception.Taxonomy.
+\ -10 is a label used as a number, so the result depends on the numbering that
+\ Forth 2012 assigns to division by zero.
+\ The result does not depend on x or w_u. What counts as noise that a recovery
+\ value must be invariant under is not defined yet, so neither the invariance
+\ nor the completeness of the upstream notes is claimed.
 \ Stack: ( x w_u w_v ext1 -- y' )
 : EXT1-ACTIVATION
   *                     \ ext1 * w_v -> ( x w_u [ext1*w_v] )
@@ -26,57 +71,57 @@
 \ 2. The Singular Neuron Definition
 \ ------------------------------------------------------------------------------
 
-\ Forward pass of the Irundykue-syry neuron
+\ Forward pass of the neuron: y is x / w_u, or the recovery value when w_u = 0,
+\ and the output is y + bias.
 \ Stack: ( x w_u w_v bias -- output )
 : SINGULAR-NEURON
-  \ Step 1: Scalar Dual-Path Execution (Pre-Ortho)
-  >R                    \ Save bias to Return Stack -> ( x w_u w_v )
+  \ Step 1: Scalar execution of both paths, before the orthogonal subspace.
+  >R                    \ Save bias to the return stack -> ( x w_u w_v )
   ['] MAC-NORMAL ['] EXT1-ACTIVATION CO-EXECUTE
-                        \ Evaluates to scalar y (either normal or spike) -> ( y )
+                        \ Scalar y, from either path -> ( y )
   R>                    \ Retrieve bias -> ( y bias )
 
-  \ Step 2: Form a 4D Clifford element on data stack
-  \ Layout: ( y, bias, 0, 0 )
+  \ Step 2: Pack four values into the 4-slot layout.
+  \ The layout stands for the basis (1, X, Y, XY) of Cl_N(2), whose dimension
+  \ is 4. No Clifford product is used yet.
   0 0                   \ -> ( y bias 0 0 )
 
-  \ Step 3: Elevate to Orthogonal Subspace (4-element quantization)
-  \ Consumes exactly 4 elements. Data stack becomes empty.
+  \ Step 3: Move the four values to the orthogonal stack.
+  \ Consumes exactly 4 items; the data stack is empty afterwards.
   >ORTHO
 
-  \ Step 4: Heisenberg Transaction & Contraction
-  \ [H and ]H act as NOPs in QEMU runtime, verified statically by Idris 2.
+  \ Step 4: Transaction and contraction.
+  \ [H and ]H are no-ops under QEMU, which has no FEAT_TME. The Idris front end
+  \ only checks that they are not nested.
+  \ CL-CONTRACT does not change the stack. The contraction it stands for is not
+  \ defined yet.
   [H
-    CL-CONTRACT         \ Project Clifford state into associative stability
+    CL-CONTRACT
   ]H
 
-  \ Step 5: Extract stabilized scalar back to data stack
-  ORTHO>                \ Restores ( y bias 0 0 ) to data stack
-  DROP 2DROP            \ Drop higher components and bias -> ( y )
-  
-  \ (Note: bias can be added during Clifford projection or here)
+  \ Step 5: Move the values back and add the bias.
+  ORTHO>                \ Restores ( y bias 0 0 )
+  2DROP +               \ Discard the two zero slots, then y + bias -> ( output )
 ;
 
 \ ------------------------------------------------------------------------------
-\ 3. Execution Stream & Deterministic Test Harness
+\ 3. Execution Stream and Deterministic Test Harness
 \ ------------------------------------------------------------------------------
 
 : RUN-TESTS
   \ Test Case 1: Non-Singular Path
   \ Inputs: x=10, w_u=2, w_v=5, bias=1
-  \ Expected: 10 / 2 = 5 -> 5 + 1 = 6
+  \ Expected: 10 / 2 = 5, then 5 + 1 = 6
   10 2 5 1 SINGULAR-NEURON
   ." Test 1 (Stable Path): " . CR
 
-  \ Test Case 2: Singular Path (Spike Activation)
+  \ Test Case 2: Singular Path (recovery value)
   \ Inputs: x=10, w_u=0, w_v=5, bias=1
-  \ Math: 10 / 0 triggers A/0!
-  \   -> Slips to EXT1-ACTIVATION with token = -10.
-  \   -> -10 * 5 = -50
-  \   -> Bias add: -50 + 1 = -49
-  \ Expected: -49
+  \ 10 / 0 throws -10, so EXT1-ACTIVATION runs with ext1 = -10.
+  \ Expected: -10 * 5 = -50, then -50 + 1 = -49
   10 0 5 1 SINGULAR-NEURON
   ." Test 2 (Singular Spike): " . CR
 ;
 
-\ Ignite the execution stream
+\ Run the tests
 RUN-TESTS
