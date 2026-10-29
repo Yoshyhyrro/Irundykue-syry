@@ -1,2 +1,4 @@
 Test 1 (Stable Path): 6
 Test 2 (Singular Spike): -49
+Test 3 (Same Fibre, other x): -49
+Test 4 (Other w_v): -69
