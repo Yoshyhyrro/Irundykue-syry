@@ -16,6 +16,14 @@
 \       value that is defined exactly where the primary path is undefined?
 \   Q2. If so, is it legitimate to let them? What must a recovery value
 \       preserve for that, and how would this be tested?
+\       A way to make Q2 testable (upstream: AssociatorRelation.agda; the
+\       transfer to this file is a proposal of this project). A map respects
+\       the relation that identifies runs of equal type t exactly when it is
+\       constant on the fibres of t, and a map that separates more values than
+\       t has cannot factor through t. For the recovery path take the type
+\       (w_u = 0, w_v): the result must not change when only x changes (Test
+\       3 below), and it does change with w_v (Test 4), so the type w_u = 0
+\       alone is too coarse. The completeness half has no test yet.
 \   Only one part touches the upstream notes: Ext^1 is a derived-functor object,
 \   and the notes realise it as the cokernel of a coboundary map. They contain
 \   nothing about D-modules, differential operators or learning rules.
@@ -121,6 +129,19 @@
   \ Expected: -10 * 5 = -50, then -50 + 1 = -49
   10 0 5 1 SINGULAR-NEURON
   ." Test 2 (Singular Spike): " . CR
+
+  \ Test Case 3: Same fibre, only x changes
+  \ Inputs: x=99, w_u=0, w_v=5, bias=1
+  \ Expected: the same value as Test 2, -49, because the recovery path does
+  \ not use x.
+  99 0 5 1 SINGULAR-NEURON
+  ." Test 3 (Same Fibre, other x): " . CR
+
+  \ Test Case 4: The type (w_u = 0) alone is too coarse
+  \ Inputs: x=10, w_u=0, w_v=7, bias=1
+  \ Expected: -10 * 7 = -70, then -70 + 1 = -69; w_v changes the result.
+  10 0 7 1 SINGULAR-NEURON
+  ." Test 4 (Other w_v): " . CR
 ;
 
 \ Run the tests
