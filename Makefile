@@ -228,6 +228,27 @@ test-list: ## List the tests
 	@for t in $(TESTS); do echo "$(TEST_DIR)/$$t.tatatina"; done
 
 # ---------------------------------------------------------------------------
+# Error codes: lib/errors.irundykue must agree with the Idris taxonomy
+# ---------------------------------------------------------------------------
+
+ERRORS_FILE ?= lib/errors.irundykue
+TAXONOMY    ?= src/Irundykue/Exception/Taxonomy.idr
+
+.PHONY: errors-check
+errors-check: ## Check lib/errors.irundykue against src/Irundykue/Exception/Taxonomy.idr
+	@set -eu; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	[ -f '$(ERRORS_FILE)' ] || { echo "error: $(ERRORS_FILE) not found" >&2; exit 1; }; \
+	[ -f '$(TAXONOMY)' ] || { echo "error: $(TAXONOMY) not found" >&2; exit 1; }; \
+	sed -n -E 's/^ *(-[0-9]+) CONSTANT [A-Z0-9-]+ +\\ ([A-Za-z0-9]+).*$$/\2 \1/p' '$(ERRORS_FILE)' | LC_ALL=C sort > "$$tmp/forth"; \
+	{ sed -n -E 's/^classify ([A-Za-z0-9]+) *= (Std|Sys) \(MkCode \((-[0-9]+)\)\)$$/\1 \3/p' '$(TAXONOMY)'; \
+	  sed -n -E 's/^tokenCode ([A-Za-z0-9]+) *= MkCode \((-[0-9]+)\)$$/\1 \2/p' '$(TAXONOMY)'; } | LC_ALL=C sort > "$$tmp/idris"; \
+	[ -s "$$tmp/idris" ] || { echo "error: no codes found in $(TAXONOMY)" >&2; exit 1; }; \
+	[ -s "$$tmp/forth" ] || { echo "error: no constants found in $(ERRORS_FILE)" >&2; exit 1; }; \
+	if diff -u --label "$(TAXONOMY) (name code)" --label "$(ERRORS_FILE) (name code)" "$$tmp/idris" "$$tmp/forth"; then \
+	  echo "ok: $$(wc -l < "$$tmp/idris" | tr -d ' ') codes agree between $(TAXONOMY) and $(ERRORS_FILE)"; \
+	else echo "error: the error codes differ" >&2; exit 1; fi
+
+# ---------------------------------------------------------------------------
 # Release bundle: dist/irundykue-syry-VERSION.tar.gz
 # ---------------------------------------------------------------------------
 
@@ -249,6 +270,17 @@ dist: kernel project.syryaml ## Assemble the release bundle in dist/
 	tar -czf "dist/$$name.tar.gz" -C dist "$$name"; \
 	( cd dist && $(SHA256) "$$name.tar.gz" > "$$name.tar.gz.sha256" ); \
 	echo "created dist/$$name.tar.gz"
+
+# ---------------------------------------------------------------------------
+# Documentation
+# ---------------------------------------------------------------------------
+
+.PHONY: diagram
+diagram: docs/ARCHITECTURE.svg ## Render docs/ARCHITECTURE.dot with Graphviz
+
+docs/%.svg: docs/%.dot
+	@command -v dot >/dev/null 2>&1 || { echo "error: Graphviz (dot) not found" >&2; exit 1; }
+	dot -Tsvg $< -o $@
 
 # ---------------------------------------------------------------------------
 # Housekeeping
