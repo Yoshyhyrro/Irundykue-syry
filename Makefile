@@ -249,6 +249,62 @@ errors-check: ## Check lib/errors.irundykue against src/Irundykue/Exception/Taxo
 	else echo "error: the error codes differ" >&2; exit 1; fi
 
 # ---------------------------------------------------------------------------
+# Before merging into main
+# ---------------------------------------------------------------------------
+
+.PHONY: premerge
+premerge: ## Check what must be right in the repository before merging into main
+	@set -u; problems=0; warnings=0; \
+	pass() { echo "ok     $$1"; }; \
+	fail() { echo "FAIL   $$1"; problems=$$((problems + 1)); }; \
+	warn() { echo "warn   $$1"; warnings=$$((warnings + 1)); }; \
+	echo "== files"; \
+	for f in LICENSE README.md Makefile '$(GEN_SRC)' irundykue.ipkg build.zig '$(ERRORS_FILE)' docs/EXCEPTIONS.md docs/REFERENCES.md .github/workflows/ci.yml; do \
+	  if [ -f "$$f" ]; then pass "$$f exists"; else fail "$$f is missing"; fi; \
+	done; \
+	echo "== helper scripts"; \
+	refs=$$(grep -n -E 'forth_file_Inser[t]|configuration_file_Generate\.bas[h]|init\.bas[h]|fix\.bas[h]|bash \.?/?irundyku[e]' README.md Makefile docs/*.md docs/*.dot .github/workflows/*.yml 2>/dev/null || true); \
+	if [ -z "$$refs" ]; then pass "no reference to the local helper scripts"; else fail "reference to a local helper script:"; echo "$$refs" | sed 's/^/         /'; fi; \
+	echo "== Idris package"; \
+	for f in $$(find src -name '*.idr' 2>/dev/null | LC_ALL=C sort); do \
+	  m=$$(echo "$$f" | sed 's|^src/||; s|\.idr$$||; s|/|.|g'); re=$$(echo "$$m" | sed 's/\./\\./g'); \
+	  if grep -qE "^[[:space:]]*(modules[[:space:]]*=|,)[[:space:]]*$$re[[:space:]]*$$" irundykue.ipkg 2>/dev/null; then pass "irundykue.ipkg lists $$m"; else fail "irundykue.ipkg does not list $$m (CI would not check it)"; fi; \
+	done; \
+	echo "== .gitignore"; \
+	for e in /.cache/ /dist/; do if grep -qxF "$$e" .gitignore 2>/dev/null; then pass ".gitignore has $$e"; else fail ".gitignore lacks $$e"; fi; done; \
+	echo "== CI"; \
+	n=$$(grep -cE 'branches:.*main' .github/workflows/ci.yml 2>/dev/null || true); \
+	if [ "$${n:-0}" -ge 2 ]; then pass "CI runs on pushes to main and on pull requests against main"; else fail "the CI triggers do not cover main for both push and pull_request"; fi; \
+	for t in $$(sed -n 's/^ *run: make \([a-z-]*\).*$$/\1/p' .github/workflows/ci.yml 2>/dev/null | LC_ALL=C sort -u); do \
+	  if grep -q "make $$t" README.md; then pass "README mentions make $$t"; else fail "README does not mention make $$t (used by CI)"; fi; \
+	done; \
+	echo "== tests"; \
+	if [ -f '$(TEST_DIR)/XFAIL' ]; then \
+	  for n in $$(sed 's/[#].*//' '$(TEST_DIR)/XFAIL' | awk 'NF {print $$1}'); do \
+	    if [ -f "$(TEST_DIR)/$$n.tatatina" ]; then pass "XFAIL entry $$n has a test"; else fail "XFAIL entry $$n has no $(TEST_DIR)/$$n.tatatina"; fi; \
+	  done; \
+	fi; \
+	for t in $(TEST_DIR)/*.tatatina; do \
+	  if [ -f "$${t%.tatatina}.expected" ]; then pass "$$t has an .expected file"; else fail "$$t has no .expected file"; fi; \
+	done; \
+	echo "== error codes"; \
+	if $(MAKE) --no-print-directory errors-check >/dev/null 2>&1; then pass "errors.irundykue agrees with the taxonomy"; else fail "make errors-check fails"; fi; \
+	echo "== git"; \
+	if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	  for f in LICENSE README.md Makefile '$(GEN_SRC)' '$(ERRORS_FILE)' irundykue.ipkg build.zig .github/workflows/ci.yml; do \
+	    if git ls-files --error-unmatch "$$f" >/dev/null 2>&1; then pass "$$f is tracked"; else fail "$$f is not tracked by git"; fi; \
+	  done; \
+	  bad=$$(git ls-files | grep -E '^(\.cache|dist|zig-out|\.zig-cache)/|\.(elf|bin|o|ttc|ttm)$$' || true); \
+	  if [ -z "$$bad" ]; then pass "no build product is tracked"; else fail "build products are tracked:"; echo "$$bad" | sed 's/^/         /'; fi; \
+	  b=$$(git ls-files build 2>/dev/null | head -n 5); \
+	  if [ -n "$$b" ]; then warn "files under build/ are tracked (host-specific binaries?):"; echo "$$b" | sed 's/^/         /'; fi; \
+	  crlf=$$(git ls-files --eol | grep 'i/crlf' || true); \
+	  if [ -z "$$crlf" ]; then pass "no file is committed with CRLF line endings"; else fail "CRLF line endings in the index:"; echo "$$crlf" | sed 's/^/         /'; fi; \
+	  if [ -n "$$(git status --porcelain)" ]; then warn "the working tree has uncommitted or untracked changes"; fi; \
+	else warn "not inside a git work tree; the git checks were skipped"; fi; \
+	echo; echo "$$problems problem(s), $$warnings warning(s)."; [ "$$problems" -eq 0 ]
+
+# ---------------------------------------------------------------------------
 # Release bundle: dist/irundykue-syry-VERSION.tar.gz
 # ---------------------------------------------------------------------------
 
