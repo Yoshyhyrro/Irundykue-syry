@@ -69,6 +69,9 @@ make and bash; `make help` lists the targets.
 | `make check-insertion`| Check that an inserted file reaches the kernel intact                        |
 | `make test`           | Run the golden-output tests in `test/`                                       |
 | `make dist`           | Assemble `dist/irundykue-syry-VERSION.tar.gz` with its checksums             |
+| `make errors-check`   | Check `lib/errors.irundykue` against the Idris taxonomy                      |
+| `make diagram`        | Render `docs/ARCHITECTURE.dot` to SVG (needs Graphviz)                       |
+| `make premerge`       | Check what must be right before merging into main                            |
 | `make clean`          | Remove test results, images and the bundle (`distclean` also removes more)   |
 
 Variables such as `QEMU`, `ZIG`, `IDRIS2`, `MEMORY`, `TIMEOUT` and `KERNEL` can
@@ -331,18 +334,20 @@ test/                               Golden-output tests: NAME.tatatina, NAME.exp
 
 ## Continuous integration
 
-The workflow in `.github/workflows/ci.yml` runs on pushes and pull requests to
-its configured branches, and on manual dispatch. It:
+The workflow in `.github/workflows/ci.yml` runs on pushes to `main` and to `feature/**`
+branches, on pull requests to `main`, and on manual dispatch. It:
 
 1. installs QEMU, Chez Scheme and GMP, and sets up Zig (pinned to 0.17.0);
 2. builds Idris 2 from source (cached) and type-checks the package;
 3. runs `zig build` and inspects the ELF;
 4. boots the kernel in QEMU for five seconds and requires the banner
    `cold boot at EL1` and a timeout exit status (124);
-5. runs `make check-insertion` and `make test`;
+5. runs `make check-insertion`, `make test` and `make errors-check`;
 6. runs `make dist` (when `configuration_file_Generate.idr` is in the repository)
    and uploads the release bundle;
 7. uploads `irundykue-syry.elf` and `irundykue-syry.bin` as artifacts.
+
+On pull requests the workflow also runs `make premerge`.
 
 The workflow calls only tracked files: `make` targets, `zig build` and
 `idris2`. Local helper scripts are not needed by CI.
