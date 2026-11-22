@@ -89,7 +89,8 @@ make run FILES=notes.txt ANY_EXT=1           # accept another extension
 ```
 
 Accepted extensions are `.4th`, `.tatatina` and `.irundykue`; the payload may be
-at most 1 MiB; file names must not contain spaces. The run stops after `TIMEOUT`
+at most 1 MiB; file names must not contain spaces. Carriage returns are removed,
+so files saved with CRLF line endings behave like LF files. The run stops after `TIMEOUT`
 seconds (30 by default, `TIMEOUT=0` disables the limit) when files are inserted.
 
 | Offset | Size | Content                                  |
@@ -398,6 +399,24 @@ Not implemented yet:
 - **Non-nesting of transactions is an implementation rule.** The `Bool` index
   forbids nested `[H`, which is a discipline of this dialect and not a property
   taken from the background material.
+
+## Error codes
+
+The THROW codes that the dialect generates are fixed in `docs/EXCEPTIONS.md` (scope
+v1) and, as the source of truth, in `src/Irundykue/Exception/Taxonomy.idr`. Codes of
+Forth 2012 Table 9.1 keep their numbers; conditions of the dialect use `-256` and
+below.
+
+`lib/errors.irundykue` gives the codes their Forth names (`ERR-DIV-BY-ZERO`, ...), range
+predicates and messages, as the counterpart of `errno.h`. `make errors-check` compares it
+with the Idris module, and CI runs the check.
+
+## Architecture
+
+`docs/ARCHITECTURE.dot` is the architecture diagram, with the implementation status of
+every part marked (implemented, partly implemented, proposed) and the open questions
+shown as dotted red links. `make diagram` renders it to `docs/ARCHITECTURE.svg` and
+needs Graphviz.
 
 ## Background
 
