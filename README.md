@@ -323,11 +323,16 @@ src/Main.idr                        Generator entry point and the prototype AST
 src/Irundykue/AST.idr               Indexed Forth AST (planned home, currently a stub)
 src/Irundykue/Codegen/AArch64.idr   AArch64 assembly emission (placeholder dictionary)
 src/Irundykue/Types/Singularity.idr Type-level singularity machinery (stub)
+src/Irundykue/Exception/Taxonomy.idrTHROW codes with proofs of range and distinctness
 src/arch/aarch64/boot.S             Reset entry: CPACR_EL1, VBAR_EL1, stacks
 src/arch/aarch64/vectors.S          EL1 exception vector table and recovery handler
 src/arch/aarch64/linker.ld          Memory map for the QEMU virt machine
+lib/errors.irundykue                Names, range predicates and messages of the THROW codes
 generated/                          Output of irundykue-gen (git-ignored)
 .cache/                             Build cache of the manifest generator (git-ignored)
+docs/EXCEPTIONS.md                  THROW codes of the dialect (scope v1)
+docs/NANDUTI.md                     Specification of the .nanduti dialect
+docs/ARCHITECTURE.dot               Architecture diagram (render with make diagram)
 docs/REFERENCES.md                  Design background and upstream correspondence
 test/                               Golden-output tests: NAME.tatatina, NAME.expected, XFAIL
 ```
@@ -419,9 +424,8 @@ with the Idris module, and CI runs the check.
 ## Architecture
 
 `docs/ARCHITECTURE.dot` is the architecture diagram, with the implementation status of
-every part marked (implemented, partly implemented, proposed) and the open questions
-shown as dotted red links. `make diagram` renders it to `docs/ARCHITECTURE.svg` and
-needs Graphviz.
+every part marked (implemented, partly implemented, proposed). `make diagram` renders it to
+`docs/ARCHITECTURE.svg` and needs Graphviz. `docs/NANDUTI.md` specifies the `.nanduti` dialect.
 
 ## Background
 
