@@ -17,9 +17,11 @@ with the Idris module. This document must be updated together with both.
 2. Section 9.3.4: a system that throws on a condition listed in Table 9.1 uses the
    listed code. A condition of Table 9.1 therefore keeps its number here.
 3. A condition that Table 9.1 does not list gets a system code in `-4095 ... -256`.
-4. The residue that `CO-EXECUTE` hands to a recovery operator is the THROW code of
-   the singularity (for example `-10`), not the raw `ESR_EL1` value. A singularity
-   outside `CO-EXECUTE` is thrown with the same code.
+4. A failure is described by the packet `F = (e, x, w_u, w_v, rho)`: `e` is a THROW code
+   of this table, `x`, `w_u` and `w_v` are the operands (as in `test/neuron.tatatina`), and
+   `rho` is the residue (`docs/NANDUTI.md`). In this version the value that `CO-EXECUTE`
+   hands to a recovery operator is `e` (for example `-10`), not the raw `ESR_EL1` value. A
+   singularity outside `CO-EXECUTE` is thrown with the same code.
 5. The standard does not require a system to throw every code. This table is
    deliberately partial, and it is the documentation of "values used by CATCH and
    THROW" that section 9.4.1.1 asks for.
@@ -33,7 +35,7 @@ with the Idris module. This document must be updated together with both.
 | `-8` | `DictionaryOverflow` | `ERR-DICT-OVERFLOW` | dictionary overflow                             | allocation beyond the reserved dictionary region       | the dictionary exists                        |
 | `-9` | `TranslationAbort` | `ERR-INVALID-ADDRESS` | invalid memory address                          | a data abort, absorbed by `CO-EXECUTE` or thrown       | the MMU is configured (`boot.S` does not yet)|
 | `-10` | `DivByZeroResidue` | `ERR-DIV-BY-ZERO` | division by zero                                | an explicit divisor test in `/` (AArch64 `SDIV` does not trap) | the word `/` exists                  |
-| `-11` | `ContractionDefect` | `ERR-RESULT-RANGE` | result out of range                             | an arithmetic range check; see the pending decision    | after the arithmetic decision                |
+| `-11` | `ContractionDefect` | `ERR-RESULT-RANGE` | result out of range                             | an arithmetic range check                              | an operation performs a range check          |
 | `-20` | `ReadOnlyFault` | `ERR-READ-ONLY` | write to a read-only location                   | a permission fault                                     | page tables exist                            |
 | `-23` | `AlignmentFault` | `ERR-ALIGNMENT` | address alignment exception                     | an alignment fault                                     | alignment checking is enabled                |
 | `-256` | `TmeConflict` | `ERR-TME-ABORT` | hardware transaction aborted (system code)      | a non-zero failure status of `TSTART`                  | not with QEMU 8.2.2 or Zig 0.17.0 (no FEAT_TME) |
@@ -63,22 +65,5 @@ Every other code of Table 9.1 is out of scope for this version, for example stac
 overflow and underflow (`-3` to `-6`), undefined word (`-13`), compile-only word
 (`-14`), control structure mismatch (`-22`) and the block, file, floating-point
 and search-order codes. The standard allows a system not to throw on these
-conditions, but then the behaviour has to be documented (section 9.4.1.1). The
-behaviour for such conditions is not decided yet; a reasonable default is to stop
-with a message and without a code. Decide this before a release, because
-undefined words and stack underflow are the first errors a user of the
-interpreter will meet.
-
-## Pending decision (does not change the table)
-
-Which arithmetic the dialect promises for `*` and `+` on 64-bit cells decides how
-`-11` is generated:
-
-1. wraparound, documented: `-11` is never raised by `*` or `+`. The recovery value
-   `ext1 * w_v` then loses the size of `w_v` (`w_v = 0` and `w_v = -2^63` both give
-   0);
-2. a range check: throw `-11` when the exact result does not fit (`SMULH` shows it);
-3. a size bit as in `CappedResidue.agda`. The bit is not the CPU carry flag: for
-   addition it has to be accumulated (`b_x OR b_y OR carry`), for multiplication it
-   is not sticky (`x * 0` clears it), and a capped number with modulus `2^w` needs
-   `w + 1` bits.
+conditions (section 9.4.1.1 asks for the behaviour to be documented). The
+behaviour of the system for these conditions is not specified in this version.
