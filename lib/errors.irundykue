@@ -23,8 +23,8 @@
 \
 \ Not generated in this version
 \   Every other code of Table 9.1, for example stack overflow and underflow,
-\   undefined word and control structure mismatch. The behaviour for these
-\   conditions is not decided yet; see docs/EXCEPTIONS.md.
+\   undefined word and control structure mismatch. The behaviour of the system for
+\   these conditions is not specified in this version; see docs/EXCEPTIONS.md.
 \
 \ Status
 \   The numbers and the names are final for scope v1. The interpreter does not
