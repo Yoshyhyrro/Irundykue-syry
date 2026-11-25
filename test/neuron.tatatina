@@ -10,23 +10,17 @@
 \   applied to this file. The expected output is in test/neuron.expected, and
 \   the test is listed in test/XFAIL until the interpreter exists.
 \
-\ Open questions of this project (not established by the upstream notes)
-\   Q1. Can the second-operator lemmas serve, at the singular point A/0, in the
-\       way a derived-category treatment (D-module-like) would: a recovery
-\       value that is defined exactly where the primary path is undefined?
-\   Q2. If so, is it legitimate to let them? What must a recovery value
-\       preserve for that, and how would this be tested?
-\       A way to make Q2 testable (upstream: AssociatorRelation.agda; the
-\       transfer to this file is a proposal of this project). A map respects
-\       the relation that identifies runs of equal type t exactly when it is
-\       constant on the fibres of t, and a map that separates more values than
-\       t has cannot factor through t. For the recovery path take the type
-\       (w_u = 0, w_v): the result must not change when only x changes (Test
-\       3 below), and it does change with w_v (Test 4), so the type w_u = 0
-\       alone is too coarse. The completeness half has no test yet.
-\   Only one part touches the upstream notes: Ext^1 is a derived-functor object,
-\   and the notes realise it as the cokernel of a coboundary map. They contain
-\   nothing about D-modules, differential operators or learning rules.
+\ Notes on the tests
+\   Tests 3 and 4 fix which inputs the recovery value depends on. A map that is
+\   constant on the classes of an equivalence of runs factors through the
+\   quotient (AssociatorRelation.agda). The classes used here are the runs with
+\   the same (w_u = 0, w_v): the result must not change when only x changes
+\   (Test 3), and it does change with w_v (Test 4).
+\   Wrapping 64-bit cells identify distinct values of w_v: ext1 * w_v is 0 both
+\   for w_v = 0 and for w_v = -2^63, because the residue modulo 2^64 forgets the
+\   size (CappedResidue.agda). No test covers this.
+\   The upstream congruence of CappedResidue.agda covers + and * on the natural
+\   numbers, not /.
 \
 \ Relation to the upstream notes (an analogy, not a derivation)
 \   Upstream (AC2, AC3, AC6): a coarse map U loses information, and a second
