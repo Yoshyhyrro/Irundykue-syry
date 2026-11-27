@@ -30,22 +30,24 @@ import System.File
 -- File kinds and extensions
 -- ---------------------------------------------------------------------------
 
-data Kind = ManifestFile | ExecutableFile | DefinitionFile | LegacyFile
+data Kind = ManifestFile | ExecutableFile | DefinitionFile | LegacyFile | NandutiFile
 
 allKinds : List Kind
-allKinds = [ManifestFile, ExecutableFile, DefinitionFile, LegacyFile]
+allKinds = [ManifestFile, ExecutableFile, DefinitionFile, LegacyFile, NandutiFile]
 
 extensionOf : Kind -> String
 extensionOf ManifestFile   = ".syryaml"
 extensionOf ExecutableFile = ".tatatina"
 extensionOf DefinitionFile = ".irundykue"
 extensionOf LegacyFile     = ".4th"
+extensionOf NandutiFile    = ".nanduti"
 
 describeKind : Kind -> String
 describeKind ManifestFile   = "project manifest"
 describeKind ExecutableFile = "main executable stream"
 describeKind DefinitionFile = "definitions and specifications"
 describeKind LegacyFile     = "legacy Forth asset"
+describeKind NandutiFile    = "symbolic Piet dialect"
 
 -- ---------------------------------------------------------------------------
 -- Character classes and relative paths
