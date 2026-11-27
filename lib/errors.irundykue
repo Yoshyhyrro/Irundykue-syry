@@ -44,7 +44,7 @@
 \ number is thrown.
   -9 CONSTANT ERR-INVALID-ADDRESS  \ TranslationAbort   invalid memory address
  -10 CONSTANT ERR-DIV-BY-ZERO      \ DivByZeroResidue   division by zero
- -11 CONSTANT ERR-RESULT-RANGE     \ ContractionDefect  result out of range
+ -11 CONSTANT ERR-RESULT-RANGE     \ ContractionDefect  result out of range (checked arithmetic only)
 
 \ ------------------------------------------------------------------------------
 \ 2. System codes (the dialect; -4095 ... -256)
