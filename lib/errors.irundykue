@@ -1,0 +1,116 @@
+\ ==============================================================================
+\ errors.irundykue
+\ Irundykue-syry : THROW codes and messages (scope v1)
+\ ==============================================================================
+\
+\ This file is the counterpart of errno.h for the dialect: it gives a name to
+\ every THROW code that the system generates. Forth 2012 defines the numbers
+\ (Table 9.1) but no such file, so the names below are the project's own.
+\
+\ Source of truth
+\   src/Irundykue/Exception/Taxonomy.idr fixes the codes, and the Idris compiler
+\   checks that they are distinct and lie in the right ranges. docs/EXCEPTIONS.md
+\   describes the scope. Every constant below names its Idris constructor in the
+\   comment after it, and "make errors-check" compares the two.
+\
+\ Rules (Forth 2012, sections 9.3.1 and 9.3.4)
+\   -255 ... -1       used only as assigned by the standard
+\   -4095 ... -256    used only as assigned by a system
+\   Programs must not define THROW values in -4095 ... -1.
+\   A condition of Table 9.1 keeps its standard number, whether it is thrown or
+\   absorbed by CO-EXECUTE. The residue that CO-EXECUTE hands to a recovery
+\   operator is the THROW code, not the raw ESR_EL1 value.
+\
+\ Not generated in this version
+\   Every other code of Table 9.1, for example stack overflow and underflow,
+\   undefined word and control structure mismatch. The behaviour of the system for
+\   these conditions is not specified in this version; see docs/EXCEPTIONS.md.
+\
+\ Status
+\   The numbers and the names are final for scope v1. The interpreter does not
+\   load this file yet.
+
+\ ------------------------------------------------------------------------------
+\ 1. Standard codes (the numbers of Forth 2012, Table 9.1)
+\ ------------------------------------------------------------------------------
+
+  -1 CONSTANT ERR-ABORT            \ AbortExplicit      ABORT
+  -2 CONSTANT ERR-ABORT-MESSAGE    \ AbortWithMessage   ABORT"
+  -8 CONSTANT ERR-DICT-OVERFLOW    \ DictionaryOverflow dictionary overflow
+ -20 CONSTANT ERR-READ-ONLY        \ ReadOnlyFault      write to a read-only location
+ -23 CONSTANT ERR-ALIGNMENT        \ AlignmentFault     address alignment exception
+
+\ Singularities. CO-EXECUTE absorbs these three; outside CO-EXECUTE the same
+\ number is thrown.
+  -9 CONSTANT ERR-INVALID-ADDRESS  \ TranslationAbort   invalid memory address
+ -10 CONSTANT ERR-DIV-BY-ZERO      \ DivByZeroResidue   division by zero
+ -11 CONSTANT ERR-RESULT-RANGE     \ ContractionDefect  result out of range (checked arithmetic only)
+
+\ ------------------------------------------------------------------------------
+\ 2. System codes (the dialect; -4095 ... -256)
+\ ------------------------------------------------------------------------------
+
+-256 CONSTANT ERR-TME-ABORT        \ TmeConflict        hardware transaction aborted
+-257 CONSTANT ERR-PAC-FAILURE      \ PacViolation       pointer authentication failed
+-258 CONSTANT ERR-ORTHO-SIZE       \ Sve2DimensionError orthogonal stack transfer is not exactly four cells
+
+\ ------------------------------------------------------------------------------
+\ 3. Classification
+\ ------------------------------------------------------------------------------
+
+\ n is in the range that Forth 2012 assigns to the standard (-255 ... -1).
+: ERR-STANDARD? ( n -- flag )
+  -255 0 WITHIN
+;
+
+\ n is in the range that Forth 2012 leaves to the system (-4095 ... -256).
+: ERR-SYSTEM? ( n -- flag )
+  -4095 -255 WITHIN
+;
+
+\ n is a singularity: a code that CO-EXECUTE can absorb.
+: ERR-SINGULARITY? ( n -- flag )
+  DUP ERR-DIV-BY-ZERO = OVER ERR-INVALID-ADDRESS = OR
+  SWAP ERR-RESULT-RANGE = OR
+;
+
+\ n is a code that this version generates.
+: ERR-KNOWN? ( n -- flag )
+  CASE
+    ERR-ABORT           OF TRUE ENDOF
+    ERR-ABORT-MESSAGE   OF TRUE ENDOF
+    ERR-DICT-OVERFLOW   OF TRUE ENDOF
+    ERR-INVALID-ADDRESS OF TRUE ENDOF
+    ERR-DIV-BY-ZERO     OF TRUE ENDOF
+    ERR-RESULT-RANGE    OF TRUE ENDOF
+    ERR-READ-ONLY       OF TRUE ENDOF
+    ERR-ALIGNMENT       OF TRUE ENDOF
+    ERR-TME-ABORT       OF TRUE ENDOF
+    ERR-PAC-FAILURE     OF TRUE ENDOF
+    ERR-ORTHO-SIZE      OF TRUE ENDOF
+    FALSE SWAP
+  ENDCASE
+;
+
+\ ------------------------------------------------------------------------------
+\ 4. Messages
+\ ------------------------------------------------------------------------------
+
+\ The text of a code. The wording of Table 9.1 is used for the standard codes,
+\ except -2, which is spelled out because the string cannot hold a quote.
+: ERR-MESSAGE ( n -- c-addr u )
+  CASE
+    ERR-ABORT           OF S" ABORT"                                   ENDOF
+    ERR-ABORT-MESSAGE   OF S" ABORT with a message"                    ENDOF
+    ERR-DICT-OVERFLOW   OF S" dictionary overflow"                     ENDOF
+    ERR-INVALID-ADDRESS OF S" invalid memory address"                  ENDOF
+    ERR-DIV-BY-ZERO     OF S" division by zero"                        ENDOF
+    ERR-RESULT-RANGE    OF S" result out of range"                     ENDOF
+    ERR-READ-ONLY       OF S" write to a read-only location"           ENDOF
+    ERR-ALIGNMENT       OF S" address alignment exception"             ENDOF
+    ERR-TME-ABORT       OF S" hardware transaction aborted"            ENDOF
+    ERR-PAC-FAILURE     OF S" pointer authentication failed"           ENDOF
+    ERR-ORTHO-SIZE      OF S" orthogonal stack transfer is not exactly four cells" ENDOF
+    S" unknown error" ROT
+  ENDCASE
+;

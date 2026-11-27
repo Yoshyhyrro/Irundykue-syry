@@ -1,0 +1,4 @@
+# Tests that are known to fail. Remove a name once its output matches.
+#
+# neuron: the kernel does not interpret Forth yet; it only echoes the inserted text.
+neuron

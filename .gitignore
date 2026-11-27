@@ -1,5 +1,4 @@
-# Idris 2 build products
-/build/
+# Idris 2 build productss
 *.ttc
 *.ttm
 
@@ -26,3 +25,6 @@
 
 # Backups written by fix.bash
 /.fix-backup/
+fix.bash
+init.bash
+forth_file_Insert.bash

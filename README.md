@@ -53,6 +53,99 @@ QEMU.
 `zig build` runs `idris2 --build` itself, so the first command is only needed
 when you want to type-check without building the kernel.
 
+### Make targets
+
+The `Makefile` is the entry point for everything around the kernel. It needs GNU
+make and bash; `make help` lists the targets.
+
+| Target                | What it does                                                                 |
+|-----------------------|------------------------------------------------------------------------------|
+| `make kernel`         | Build `zig-out/bin/irundykue-syry.elf` and `.bin` (runs `zig build`)         |
+| `make typecheck`      | Type-check and build the Idris 2 package                                     |
+| `make manifest`       | Generate `project.syryaml` (`VERSION=x.y.z`, `GEN_ARGS="--name ..."`)        |
+| `make manifest-check` | Compare `project.syryaml` with the generator and check the files it names    |
+| `make scaffold`       | Create the directories and placeholder files that the manifest names         |
+| `make run`            | Run the kernel under QEMU; `FILES="a.4th b.tatatina"` inserts source files   |
+| `make check-insertion`| Check that an inserted file reaches the kernel intact                        |
+| `make test`           | Run the golden-output tests in `test/`                                       |
+| `make dist`           | Assemble `dist/irundykue-syry-VERSION.tar.gz` with its checksums             |
+| `make errors-check`   | Check `lib/errors.irundykue` against the Idris taxonomy                      |
+| `make diagram`        | Render `docs/ARCHITECTURE.dot` to SVG (needs Graphviz)                       |
+| `make premerge`       | Check what must be right before merging into main                            |
+| `make clean`          | Remove test results, images and the bundle (`distclean` also removes more)   |
+
+Variables such as `QEMU`, `ZIG`, `IDRIS2`, `MEMORY`, `TIMEOUT` and `KERNEL` can
+be overridden on the command line.
+
+### Inserting a Forth file
+
+The kernel has no file system. `make run FILES=...` hands source files to it
+through guest memory: the files are concatenated, a 16-byte header is prefixed
+and QEMU's generic loader places the image at `0x41000000` before the first
+instruction runs.
+
+```sh
+make run FILES=program.4th                   # insert one file and run
+make run FILES="a.4th b.tatatina"            # files are concatenated in order
+make run                                     # no input: the kernel parks (Ctrl-A, then X, leaves QEMU)
+make run FILES=notes.txt ANY_EXT=1           # accept another extension
+```
+
+Accepted extensions are `.4th`, `.tatatina` and `.irundykue`; the payload may be
+at most 1 MiB; file names must not contain spaces. Carriage returns are removed,
+so files saved with CRLF line endings behave like LF files. The run stops after `TIMEOUT`
+seconds (30 by default, `TIMEOUT=0` disables the limit) when files are inserted.
+
+| Offset | Size | Content                                  |
+|--------|------|------------------------------------------|
+| 0      | 8    | Magic `SYRYIN01`                         |
+| 8      | 8    | Payload length, little endian            |
+| 16     | n    | Payload (Forth source text)              |
+
+At the moment the kernel only echoes the inserted text to the UART and powers
+the machine off through PSCI, so QEMU exits with status 0. The outer interpreter
+that will consume the same buffer is not written yet.
+
+### Tests
+
+A test is `NAME.tatatina` with the expected output in `NAME.expected` in the same
+directory (`TEST_DIR`, `test` by default). The kernel's boot banner is removed
+from the output and trailing white space is ignored before the comparison.
+`make test` prints `PASS`, `FAIL`, `XFAIL` or `XPASS` per test and fails if any
+test failed or passed unexpectedly.
+
+A file named `XFAIL` in the test directory lists tests that are known to fail
+(one name per line, `#` starts a comment). Such a test is reported as `XFAIL`
+while its output differs (`VERBOSE=1` shows the difference), and as `XPASS`,
+which counts as an error, once it passes, so the list cannot go stale. Failures
+of the setup itself (QEMU missing, no boot banner, timeout) are never hidden by
+`XFAIL`.
+
+`test/neuron.tatatina` is listed in `test/XFAIL` for now: its expected output is
+written down in `test/neuron.expected`, but the kernel only echoes the source
+until the interpreter exists.
+
+### Release bundle
+
+`make dist` builds the kernel, generates `project.syryaml` and writes
+`dist/irundykue-syry-VERSION.tar.gz` (and its `.sha256`). The bundle holds the
+kernel (`.elf` and `.bin`), `project.syryaml`, `LICENSE`, `README.md`, the
+`Makefile`, the tests, a generated launcher `irundykue` and `SHA256SUMS`. The
+build stops if `LICENSE` is missing, because BSD-3-Clause asks binary
+distributions to carry it.
+
+After extracting the archive, the kernel can be tried without any sources:
+
+```sh
+./irundykue test/neuron.tatatina    # insert a file and run it
+make test                           # run the tests
+make check-insertion
+```
+
+The launcher passes its arguments to `make run`, so it needs `make` and QEMU. Use
+a `.tar.gz` for releases: GitHub's artifact `.zip` files do not preserve the
+executable bit of the launcher.
+
 ### Using the generator directly
 
 ```sh
@@ -77,6 +170,7 @@ The text uses quotation words (`[:` and `;]`) and words defined by this dialect
 | A C compiler          | Required by the `refc` Idris 2 backend   | GCC                                    |
 | Zig                   | Cross assembler, linker and build driver | 0.14.1, 0.15.2, 0.16.0, 0.17.0         |
 | `qemu-system-aarch64` | Running the kernel image                 | 8.2.2                                  |
+| GNU make and bash     | Manifest, run, test and release targets  | make 4.3                               |
 
 Idris 2 is built from source with a Chez Scheme bootstrap (`make bootstrap
 SCHEME=chezscheme`); on Debian and Ubuntu you need `chezscheme`, `libgmp-dev`
@@ -147,6 +241,8 @@ end at depth 1, the depth the primary branch leaves.
 | Data stack                   | `SP_EL0`, 32 KiB, top at `__forth_dstack_top`                                |
 | Return / exception stack     | `SP_EL1`, 32 KiB, top at `__forth_rstack_top`                                |
 | Memory map                   | 128 MiB of RAM at `0x40000000` (QEMU `virt`)                                 |
+| Inserted file                | Image at `0x41000000`, loaded by QEMU before reset; at most 1 MiB of payload |
+| Arithmetic                   | `+` and `*` wrap around at the cell width; signed and unsigned are different types; a checked operation out of range throws `-11` and returns no result (`docs/ARITHMETIC.md`) |
 | Vector table                 | `el1_vector_table`, 16 entries of 128 bytes, aligned to 2 KiB                |
 | Recovery token               | `x28` holds the address of `xt2`, or 0 when no `CO-EXECUTE` is active        |
 | Recovery path                | A synchronous exception at EL1 with `SP_ELx` (vector offset `0x200`) loads `ELR_EL1` from `x28`, passes `ESR_EL1` in `x0`, clears `x28` and executes `ERET` |
@@ -157,35 +253,112 @@ end at depth 1, the depth the primary branch leaves.
 the vector base, sets up both stacks and clears `x28` before the first word
 runs.
 
+## Project manifest
+
+`project.syryaml` is a minimal, Alire-inspired manifest. It names the project,
+its main executable, its source directories, its hardware target and its legacy
+dependencies:
+
+```yaml
+name: irundykue_app
+version: 0.1.0
+licenses: BSD-3-Clause
+executable: src/main.tatatina
+source-dirs:
+  - src
+  - lib
+target:
+  arch: aarch64-none-elf
+  features: [sve2, pac, tme]
+dependencies:
+  - vendor/compat.4th
+```
+
+The file is generated, not written by hand. `configuration_file_Generate.idr`
+validates the configuration and renders the manifest; `make manifest` builds that
+generator into `.cache/` and runs it.
+
+```sh
+make manifest                          # write project.syryaml (rebuilt when its inputs change)
+make manifest VERSION=0.2.0            # override the version
+make manifest GEN_ARGS="--name my_app --features sve2,pac"
+make manifest-check                    # the manifest matches the generator and the files exist
+make scaffold                          # create missing referenced files as placeholders
+```
+
+The generator accepts more options, such as `--description`, `--license`,
+`--author`, `--source-dir` and `--dependency`; its executable is
+`.cache/configuration_file_Generate/exec/configuration_file_Generate` and
+`--help` lists them. `.cache/` should be listed in `.gitignore`.
+
+### File extensions
+
+| Extension     | Kind                           | Checked by the generator                |
+|---------------|--------------------------------|-----------------------------------------|
+| `.syryaml`    | Project manifest               | Output path of the driver               |
+| `.tatatina`   | Main executable stream         | `executable` must end in this extension |
+| `.irundykue`  | Definitions and specifications | Searched under `source-dirs`            |
+| `.4th`        | Legacy Forth asset             | Every `dependencies` entry              |
+| `.nanduti`    | Symbolic Piet dialect          | Registered in the extension registry; see `docs/NANDUTI.md` |
+
+The extension of an executable or dependency is part of its type in the
+generator, so a manifest that names `src/main.4th` as its executable cannot be
+produced. Paths must be relative, use only `A-Z a-z 0-9 _ . / -`, and contain no
+empty, `.` or `..` segments. Every problem found is reported at once.
+
+The manifest lists `tme` as a CPU feature, and the generator prints a note about
+it: Zig 0.17.0 has no `tme` feature and QEMU 8.2.2 does not emulate FEAT_TME (see
+[Known limitations](#known-limitations)). `build.zig` does not read the manifest
+yet; its CPU features are still set in `build.zig` itself.
+
 ## Repository layout
 
 ```
 .github/workflows/ci.yml            Continuous integration
+LICENSE                             BSD-3-Clause license text
+project.syryaml                     Project manifest, generated by make manifest
+Makefile                            Manifest, run, test and release targets
+configuration_file_Generate.idr     Manifest generator (Idris 2), built by make
 irundykue.ipkg                      Idris 2 package description
 build.zig                           Zig build graph
 src/Main.idr                        Generator entry point and the prototype AST
 src/Irundykue/AST.idr               Indexed Forth AST (planned home, currently a stub)
 src/Irundykue/Codegen/AArch64.idr   AArch64 assembly emission (placeholder dictionary)
 src/Irundykue/Types/Singularity.idr Type-level singularity machinery (stub)
+src/Irundykue/Exception/Taxonomy.idrTHROW codes with proofs of range and distinctness
 src/arch/aarch64/boot.S             Reset entry: CPACR_EL1, VBAR_EL1, stacks
 src/arch/aarch64/vectors.S          EL1 exception vector table and recovery handler
 src/arch/aarch64/linker.ld          Memory map for the QEMU virt machine
+lib/errors.irundykue                Names, range predicates and messages of the THROW codes
 generated/                          Output of irundykue-gen (git-ignored)
+.cache/                             Build cache of the manifest generator (git-ignored)
+docs/EXCEPTIONS.md                  THROW codes of the dialect (scope v1)
+docs/ARITHMETIC.md                  Arithmetic of the dialect (wraparound, checked operations)
+docs/NANDUTI.md                     Specification of the .nanduti dialect
+docs/ARCHITECTURE.dot               Architecture diagram (render with make diagram)
 docs/REFERENCES.md                  Design background and upstream correspondence
-test/                               Tests (empty so far)
+test/                               Golden-output tests: NAME.tatatina, NAME.expected, XFAIL
 ```
 
 ## Continuous integration
 
-The workflow in `.github/workflows/ci.yml` runs on pushes and pull requests to
-`feature/init`, and on manual dispatch. It:
+The workflow in `.github/workflows/ci.yml` runs on pushes to `main` and to `feature/**`
+branches, on pull requests to `main`, and on manual dispatch. It:
 
 1. installs QEMU, Chez Scheme and GMP, and sets up Zig (pinned to 0.17.0);
 2. builds Idris 2 from source (cached) and type-checks the package;
 3. runs `zig build` and inspects the ELF;
 4. boots the kernel in QEMU for five seconds and requires the banner
    `cold boot at EL1` and a timeout exit status (124);
-5. uploads `irundykue-syry.elf` and `irundykue-syry.bin` as artifacts.
+5. runs `make check-insertion`, `make test` and `make errors-check`;
+6. runs `make dist` (when `configuration_file_Generate.idr` is in the repository)
+   and uploads the release bundle;
+7. uploads `irundykue-syry.elf` and `irundykue-syry.bin` as artifacts.
+
+On pull requests the workflow also runs `make premerge`.
+
+The workflow calls only tracked files: `make` targets, `zig build` and
+`idris2`. Local helper scripts are not needed by CI.
 
 The smoke test uses `-M virt` without `virtualization=on`, because QEMU enters
 the kernel at EL2 when virtualization is enabled while `boot.S` expects EL1. It
@@ -205,15 +378,21 @@ Working:
 - the EL1 boot path, vector table and recovery handler, assembled and linked
   by Zig;
 - booting under QEMU and printing the banner and the current exception level
-  over the PL011 UART.
+  over the PL011 UART;
+- inserting Forth source files into guest memory and echoing them back
+  (`make run`);
+- a golden-output test runner (`make test`) and a release bundle (`make dist`),
+  both run in CI.
 
 Not implemented yet:
 
-- the Forth inner interpreter and the real dictionary;
+- the Forth inner interpreter, the outer interpreter that would read the
+  inserted source, and the real dictionary;
 - the Forth 2012 core word set and any conformance testing;
 - the split of `src/Main.idr` into `Irundykue.AST`, `Irundykue.Codegen.AArch64`
   and `Irundykue.Types.Singularity` (the prototype AST still lives in `Main`);
-- tests.
+- passing tests: `test/neuron.tatatina` is a known failure until the
+  interpreter exists.
 
 ## Known limitations
 
@@ -234,6 +413,23 @@ Not implemented yet:
   forbids nested `[H`, which is a discipline of this dialect and not a property
   taken from the background material.
 
+## Error codes
+
+The THROW codes that the dialect generates are fixed in `docs/EXCEPTIONS.md` (scope
+v1) and, as the source of truth, in `src/Irundykue/Exception/Taxonomy.idr`. Codes of
+Forth 2012 Table 9.1 keep their numbers; conditions of the dialect use `-256` and
+below.
+
+`lib/errors.irundykue` gives the codes their Forth names (`ERR-DIV-BY-ZERO`, ...), range
+predicates and messages, as the counterpart of `errno.h`. `make errors-check` compares it
+with the Idris module, and CI runs the check.
+
+## Architecture
+
+`docs/ARCHITECTURE.dot` is the architecture diagram, with the implementation status of
+every part marked (implemented, partly implemented, proposed). `make diagram` renders it to
+`docs/ARCHITECTURE.svg` and needs Graphviz. `docs/NANDUTI.md` specifies the `.nanduti` dialect.
+
 ## Background
 
 The design draws on a set of Agda notes about recovering information lost by a
@@ -246,4 +442,7 @@ statements it corresponds to.
 
 ## License
 
-BSD-3-Clause license
+Irundykue-syry is released under the BSD 3-Clause License; see
+[`LICENSE`](LICENSE). Redistributions in binary form, such as the ELF and BIN
+kernel images, must reproduce the copyright notice, the list of conditions and
+the disclaimer in the documentation or other materials that accompany them.

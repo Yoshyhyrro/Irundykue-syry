@@ -1,0 +1,24 @@
+# Project metadata (Alire-inspired minimalist manifest)
+name: irundykue_app
+description: AArch64 bare-metal Forth kernel with singularity resolution
+version: 0.1.0
+licenses: BSD-3-Clause
+authors:
+  - "Irundykue-syry Team"
+
+# Main executable entrypoint (live execution stream)
+executable: src/main.tatatina
+
+# Library search paths for definitions and specifications (.irundykue)
+source-dirs:
+  - src
+  - lib
+
+# Hardware target profile (Armv9 bare-metal)
+target:
+  arch: aarch64-none-elf
+  features: [sve2, pac, tme]
+
+# External libraries and legacy Forth assets (.4th)
+dependencies:
+  - vendor/compat.4th

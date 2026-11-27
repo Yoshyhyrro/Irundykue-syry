@@ -1,0 +1,356 @@
+#!/usr/bin/env bash
+#
+# irundykue - command-line front end for Irundykue-syry.
+#
+#   irundykue [run] [OPTIONS] FILE...   Run Forth source files in the kernel
+#   irundykue test [OPTIONS] [PATH...]  Run golden-output tests
+#   irundykue manifest [ARGS...]        Generate or check project.syryaml
+#   irundykue version                   Print the version
+#
+# "run" and "manifest" hand over to forth_file_Insert.bash and
+# configuration_file_Generate.bash, which are looked up next to this script, in
+# a tools/ directory next to it, and in its parent directory. When the first
+# argument is a file or an option, "run" is assumed:
+#
+#   irundykue test/neuron.tatatina
+#
+# Tests
+# -----
+# A test is NAME.tatatina with a golden file NAME.expected in the same
+# directory. The kernel's boot banner is removed from the output before it is
+# compared, and trailing white space is ignored on both sides. A directory may contain a file named XFAIL that lists test names
+# (one per line, "#" starts a comment) that are known to fail. Such a test
+# counts as XFAIL while its output differs, and as XPASS, which is an error,
+# once it starts to pass, so that the list cannot go stale. Infrastructure
+# problems (no QEMU, no banner, timeout) are always failures and are never
+# hidden by XFAIL.
+#
+# Exit status of "test": 0 when every test passed or failed as expected, 1
+# otherwise.
+
+set -euo pipefail
+
+readonly BANNER_PATTERN='^irundykue-syry: cold boot at EL'
+readonly FALLBACK_VERSION='0.1.0'
+
+# Resolve symbolic links so that the command can be linked into a PATH
+# directory.
+resolve_script() {
+  local source="${BASH_SOURCE[0]}" dir
+  while [[ -L "${source}" ]]; do
+    dir="$(cd -P "$(dirname "${source}")" && pwd)"
+    source="$(readlink "${source}")"
+    [[ "${source}" == /* ]] || source="${dir}/${source}"
+  done
+  cd -P "$(dirname "${source}")" && pwd
+}
+SCRIPT_DIR="$(resolve_script)"
+
+SCRATCH=""
+# shellcheck disable=SC2329  # invoked through the EXIT trap below
+cleanup() {
+  if [[ -n "${SCRATCH}" && -d "${SCRATCH}" ]]; then
+    rm -rf "${SCRATCH}"
+  fi
+  return 0
+}
+trap cleanup EXIT
+
+die() {
+  printf 'irundykue: %s\n' "$*" >&2
+  exit 1
+}
+
+# find_helper NAME: print the path of a helper script.
+find_helper() {
+  local dir
+  for dir in "${SCRIPT_DIR}" "${SCRIPT_DIR}/tools" "${SCRIPT_DIR}/.."; do
+    if [[ -f "${dir}/$1" ]]; then
+      printf '%s' "${dir}/$1"
+      return 0
+    fi
+  done
+  die "helper script $1 not found next to ${0##*/}"
+}
+
+project_version() {
+  local dir manifest line
+  for dir in "${SCRIPT_DIR}" "${SCRIPT_DIR}/.." "${PWD}"; do
+    manifest="${dir}/project.syryaml"
+    if [[ -f "${manifest}" ]]; then
+      while IFS= read -r line; do
+        case "${line}" in
+          version:*)
+            line="${line#version:}"
+            line="${line#"${line%%[![:space:]]*}"}"
+            printf '%s' "${line%%[[:space:]]*}"
+            return 0
+            ;;
+          *) ;;
+        esac
+      done <"${manifest}"
+    fi
+  done
+  printf '%s' "${FALLBACK_VERSION}"
+}
+
+usage() {
+  cat <<__USAGE__
+Usage: irundykue COMMAND [ARGS...]
+       irundykue FILE...
+
+Commands:
+  run [OPTIONS] FILE...    Run Forth source files in the kernel under QEMU
+                           (default when the first argument is a file or option)
+  test [OPTIONS] [PATH...] Run golden-output tests (default: ./test)
+  manifest [ARGS...]       Generate or check project.syryaml
+  version                  Print the version
+  help                     Show this help
+
+Run "irundykue run --help", "irundykue test --help" or "irundykue manifest --help"
+for the options of each command.
+__USAGE__
+}
+
+usage_test() {
+  cat <<__USAGE__
+Usage: irundykue test [options] [PATH...]
+
+Run tests. A PATH is a directory (searched for *.tatatina, not recursively) or
+a .tatatina file; the default is the test directory in the current directory,
+or next to this script. Each NAME.tatatina needs a golden file NAME.expected.
+
+Options:
+  -k, --kernel PATH   Kernel ELF (see "irundykue run --help")
+      --qemu PATH     QEMU executable
+  -t, --timeout SEC   Time limit per test (default: 30)
+  -l, --list          List the tests and exit
+  -v, --verbose       Show the difference for tests that failed as expected
+  -h, --help          Show this help and exit
+
+A file named XFAIL in a test directory lists tests that are known to fail.
+__USAGE__
+}
+
+# ---------------------------------------------------------------------------
+# test
+# ---------------------------------------------------------------------------
+
+# is_xfail DIRECTORY NAME
+is_xfail() {
+  local list="$1/XFAIL" line
+  [[ -f "${list}" ]] || return 1
+  while IFS= read -r line || [[ -n "${line}" ]]; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    if [[ "${line}" == "$2" ]]; then
+      return 0
+    fi
+  done <"${list}"
+  return 1
+}
+
+cmd_test() {
+  local timeout=30 list_only=0 verbose=0
+  local insert_args=() targets=() files=()
+  local target file dir name
+
+  while (( $# )); do
+    case "$1" in
+      -k|--kernel)
+        [[ $# -ge 2 ]] || die "option $1 requires an argument"
+        insert_args+=(--kernel "$2")
+        shift 2
+        ;;
+      --qemu)
+        [[ $# -ge 2 ]] || die "option $1 requires an argument"
+        insert_args+=(--qemu "$2")
+        shift 2
+        ;;
+      -t|--timeout)
+        [[ $# -ge 2 ]] || die "option $1 requires an argument"
+        timeout="$2"
+        shift 2
+        ;;
+      -l|--list)
+        list_only=1
+        shift
+        ;;
+      -v|--verbose)
+        verbose=1
+        shift
+        ;;
+      -h|--help)
+        usage_test
+        return 0
+        ;;
+      -*)
+        usage_test >&2
+        die "unknown option: $1"
+        ;;
+      *)
+        targets+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  [[ "${timeout}" =~ ^[0-9]+$ ]] || die "the timeout must be a whole number of seconds: ${timeout}"
+
+  if (( ${#targets[@]} == 0 )); then
+    if [[ -d "${PWD}/test" ]]; then
+      targets=("${PWD}/test")
+    elif [[ -d "${SCRIPT_DIR}/test" ]]; then
+      targets=("${SCRIPT_DIR}/test")
+    else
+      die "no test directory found; pass a PATH"
+    fi
+  fi
+
+  for target in "${targets[@]}"; do
+    if [[ -d "${target}" ]]; then
+      while IFS= read -r file; do
+        files+=("${file}")
+      done < <(find "${target}" -maxdepth 1 -type f -name '*.tatatina' | LC_ALL=C sort)
+    elif [[ -f "${target}" ]]; then
+      files+=("${target}")
+    else
+      die "no such file or directory: ${target}"
+    fi
+  done
+  (( ${#files[@]} )) || die "no .tatatina tests found"
+
+  if (( list_only )); then
+    for file in "${files[@]}"; do
+      dir="$(dirname "${file}")"
+      name="$(basename "${file}" .tatatina)"
+      if is_xfail "${dir}" "${name}"; then
+        printf '%s (expected to fail)\n' "${file}"
+      else
+        printf '%s\n' "${file}"
+      fi
+    done
+    return 0
+  fi
+
+  local insert
+  insert="$(find_helper forth_file_Insert.bash)"
+  SCRATCH="$(mktemp -d)"
+
+  local passed=0 failed=0 xfailed=0 xpassed=0
+  local expected raw output status reason expect_fail
+
+  for file in "${files[@]}"; do
+    dir="$(dirname "${file}")"
+    name="$(basename "${file}" .tatatina)"
+    expected="${dir}/${name}.expected"
+    raw="${SCRATCH}/${name}.raw"
+    output="${SCRATCH}/${name}.out"
+    expect_fail=0
+    if is_xfail "${dir}" "${name}"; then
+      expect_fail=1
+    fi
+
+    if [[ ! -f "${expected}" ]]; then
+      printf 'FAIL   %s (no %s)\n' "${name}" "${name}.expected"
+      failed=$(( failed + 1 ))
+      continue
+    fi
+
+    status=0
+    bash "${insert}" --timeout "${timeout}" ${insert_args[@]+"${insert_args[@]}"} \
+      "${file}" >"${raw}" 2>"${SCRATCH}/${name}.err" || status=$?
+
+    reason=""
+    if (( status != 0 )); then
+      reason="the run ended with status ${status}"
+    elif ! tr -d '\r' <"${raw}" | grep -q "${BANNER_PATTERN}"; then
+      reason="no boot banner in the output"
+    fi
+    if [[ -n "${reason}" ]]; then
+      printf 'FAIL   %s (%s)\n' "${name}" "${reason}"
+      sed 's/^/         | /' "${SCRATCH}/${name}.err" | tail -n 5
+      failed=$(( failed + 1 ))
+      continue
+    fi
+
+    # Forth prints a space after every number, and editors strip trailing
+    # blanks, so both sides are compared without trailing white space.
+    # Keep what follows the banner line (sed '1,/re/d' would fail when the
+    # banner is the first line, because the end pattern is searched from line 2).
+    tr -d '\r' <"${raw}" | sed -n "/${BANNER_PATTERN}/,\$p" | sed '1d' \
+      | sed 's/[[:space:]]*$//' >"${output}"
+    sed 's/[[:space:]]*$//' "${expected}" >"${SCRATCH}/${name}.golden"
+
+    if diff -u --label "${name}.expected" --label "${name} (actual)" \
+         "${SCRATCH}/${name}.golden" "${output}" >"${SCRATCH}/${name}.diff"; then
+      if (( expect_fail )); then
+        printf 'XPASS  %s (unexpected pass: remove it from XFAIL)\n' "${name}"
+        xpassed=$(( xpassed + 1 ))
+      else
+        printf 'PASS   %s\n' "${name}"
+        passed=$(( passed + 1 ))
+      fi
+    else
+      if (( expect_fail )); then
+        printf 'XFAIL  %s (known to fail)\n' "${name}"
+        xfailed=$(( xfailed + 1 ))
+        if (( verbose )); then
+          sed 's/^/         | /' "${SCRATCH}/${name}.diff"
+        fi
+      else
+        printf 'FAIL   %s (output differs)\n' "${name}"
+        sed 's/^/         | /' "${SCRATCH}/${name}.diff"
+        failed=$(( failed + 1 ))
+      fi
+    fi
+  done
+
+  printf '\n%d passed, %d failed, %d expected failures, %d unexpected passes\n' \
+    "${passed}" "${failed}" "${xfailed}" "${xpassed}"
+  if (( failed > 0 || xpassed > 0 )); then
+    return 1
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Dispatch
+# ---------------------------------------------------------------------------
+
+if (( $# == 0 )); then
+  usage
+  exit 0
+fi
+
+case "$1" in
+  run)
+    shift
+    exec bash "$(find_helper forth_file_Insert.bash)" "$@"
+    ;;
+  test)
+    shift
+    cmd_test "$@"
+    ;;
+  manifest)
+    shift
+    exec bash "$(find_helper configuration_file_Generate.bash)" "$@"
+    ;;
+  version|--version|-V)
+    printf 'irundykue %s\n' "$(project_version)"
+    ;;
+  help|--help|-h)
+    usage
+    ;;
+  -*)
+    exec bash "$(find_helper forth_file_Insert.bash)" "$@"
+    ;;
+  *)
+    if [[ -e "$1" || "$1" == - ]]; then
+      exec bash "$(find_helper forth_file_Insert.bash)" "$@"
+    fi
+    usage >&2
+    die "unknown command or missing file: $1"
+    ;;
+esac
