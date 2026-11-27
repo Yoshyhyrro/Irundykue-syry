@@ -16,9 +16,10 @@
 \   quotient (AssociatorRelation.agda). The classes used here are the runs with
 \   the same (w_u = 0, w_v): the result must not change when only x changes
 \   (Test 3), and it does change with w_v (Test 4).
-\   Wrapping 64-bit cells identify distinct values of w_v: ext1 * w_v is 0 both
-\   for w_v = 0 and for w_v = -2^63, because the residue modulo 2^64 forgets the
-\   size (CappedResidue.agda). No test covers this.
+\   * and + wrap around at the cell width (docs/ARITHMETIC.md). Distinct values of
+\   w_v can therefore give the same recovery value: ext1 * w_v is 0 both for
+\   w_v = 0 and for w_v = -2^63, because the residue modulo 2^64 forgets the
+\   size (CappedResidue.agda). Test 5 records this.
 \   The upstream congruence of CappedResidue.agda covers + and * on the natural
 \   numbers, not /.
 \
@@ -136,6 +137,14 @@
   \ Expected: -10 * 7 = -70, then -70 + 1 = -69; w_v changes the result.
   10 0 7 1 SINGULAR-NEURON
   ." Test 4 (Other w_v): " . CR
+
+  \ Test Case 5: Wraparound
+  \ Inputs: x=10, w_u=0, w_v=-9223372036854775808 (the smallest signed cell), bias=1
+  \ * wraps around: -10 * -2^63 = 5 * 2^64, which is 0 modulo 2^64. The result
+  \ equals that for w_v = 0, namely 0 + 1 = 1. A checked multiplication would
+  \ throw -11 here instead.
+  10 0 -9223372036854775808 1 SINGULAR-NEURON
+  ." Test 5 (Wraparound): " . CR
 ;
 
 \ Run the tests
