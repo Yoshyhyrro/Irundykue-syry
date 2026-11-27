@@ -35,7 +35,7 @@ with the Idris module. This document must be updated together with both.
 | `-8` | `DictionaryOverflow` | `ERR-DICT-OVERFLOW` | dictionary overflow                             | allocation beyond the reserved dictionary region       | the dictionary exists                        |
 | `-9` | `TranslationAbort` | `ERR-INVALID-ADDRESS` | invalid memory address                          | a data abort, absorbed by `CO-EXECUTE` or thrown       | the MMU is configured (`boot.S` does not yet)|
 | `-10` | `DivByZeroResidue` | `ERR-DIV-BY-ZERO` | division by zero                                | an explicit divisor test in `/` (AArch64 `SDIV` does not trap) | the word `/` exists                  |
-| `-11` | `ContractionDefect` | `ERR-RESULT-RANGE` | result out of range                             | an arithmetic range check                              | an operation performs a range check          |
+| `-11` | `ContractionDefect` | `ERR-RESULT-RANGE` | result out of range                             | a checked arithmetic operation whose result is out of range (`docs/ARITHMETIC.md`) | checked arithmetic exists |
 | `-20` | `ReadOnlyFault` | `ERR-READ-ONLY` | write to a read-only location                   | a permission fault                                     | page tables exist                            |
 | `-23` | `AlignmentFault` | `ERR-ALIGNMENT` | address alignment exception                     | an alignment fault                                     | alignment checking is enabled                |
 | `-256` | `TmeConflict` | `ERR-TME-ABORT` | hardware transaction aborted (system code)      | a non-zero failure status of `TSTART`                  | not with QEMU 8.2.2 or Zig 0.17.0 (no FEAT_TME) |
@@ -66,4 +66,5 @@ overflow and underflow (`-3` to `-6`), undefined word (`-13`), compile-only word
 (`-14`), control structure mismatch (`-22`) and the block, file, floating-point
 and search-order codes. The standard allows a system not to throw on these
 conditions (section 9.4.1.1 asks for the behaviour to be documented). The
-behaviour of the system for these conditions is not specified in this version.
+behaviour of the system for these conditions is not specified in this version. The
+arithmetic that produces `-11`, and what else is left open, is in `docs/ARITHMETIC.md`.
