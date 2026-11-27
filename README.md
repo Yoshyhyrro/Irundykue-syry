@@ -242,6 +242,7 @@ end at depth 1, the depth the primary branch leaves.
 | Return / exception stack     | `SP_EL1`, 32 KiB, top at `__forth_rstack_top`                                |
 | Memory map                   | 128 MiB of RAM at `0x40000000` (QEMU `virt`)                                 |
 | Inserted file                | Image at `0x41000000`, loaded by QEMU before reset; at most 1 MiB of payload |
+| Arithmetic                   | `+` and `*` wrap around at the cell width; signed and unsigned are different types; a checked operation out of range throws `-11` and returns no result (`docs/ARITHMETIC.md`) |
 | Vector table                 | `el1_vector_table`, 16 entries of 128 bytes, aligned to 2 KiB                |
 | Recovery token               | `x28` holds the address of `xt2`, or 0 when no `CO-EXECUTE` is active        |
 | Recovery path                | A synchronous exception at EL1 with `SP_ELx` (vector offset `0x200`) loads `ELR_EL1` from `x28`, passes `ESR_EL1` in `x0`, clears `x28` and executes `ERET` |
@@ -298,6 +299,7 @@ The generator accepts more options, such as `--description`, `--license`,
 | `.tatatina`   | Main executable stream         | `executable` must end in this extension |
 | `.irundykue`  | Definitions and specifications | Searched under `source-dirs`            |
 | `.4th`        | Legacy Forth asset             | Every `dependencies` entry              |
+| `.nanduti`    | Symbolic Piet dialect          | Registered in the extension registry; see `docs/NANDUTI.md` |
 
 The extension of an executable or dependency is part of its type in the
 generator, so a manifest that names `src/main.4th` as its executable cannot be
@@ -331,6 +333,7 @@ lib/errors.irundykue                Names, range predicates and messages of the 
 generated/                          Output of irundykue-gen (git-ignored)
 .cache/                             Build cache of the manifest generator (git-ignored)
 docs/EXCEPTIONS.md                  THROW codes of the dialect (scope v1)
+docs/ARITHMETIC.md                  Arithmetic of the dialect (wraparound, checked operations)
 docs/NANDUTI.md                     Specification of the .nanduti dialect
 docs/ARCHITECTURE.dot               Architecture diagram (render with make diagram)
 docs/REFERENCES.md                  Design background and upstream correspondence
