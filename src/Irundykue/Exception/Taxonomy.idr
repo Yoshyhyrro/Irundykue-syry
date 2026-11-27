@@ -58,7 +58,7 @@ public export
 data SingularityToken
   = DivByZeroResidue     -- -10 division by zero
   | TranslationAbort     -- -9  invalid memory address
-  | ContractionDefect    -- -11 result out of range
+  | ContractionDefect    -- -11 result out of range (checked arithmetic only)
 
 public export
 tokenCode : SingularityToken -> Code Standard
